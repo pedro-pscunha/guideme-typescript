@@ -42,6 +42,18 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
   );
 });
 
+/** Descending by probability, and where two are equal, ascending by key. */
+const isRanked = (ranked: ChoiceOutcome["ranked"]): boolean => {
+  for (let i = 1; i < ranked.length; i += 1) {
+    const prev = ranked[i - 1];
+    const here = ranked[i];
+    if (prev === undefined || here === undefined) return false;
+    if (prev[1] < here[1]) return false;
+    if (prev[1] === here[1] && compareByCodePoint(prev[0], here[0]) >= 0) return false;
+  }
+  return true;
+};
+
 test("choice: unsure iff confidence < minConfidence, and ranked is descending then by key", () => {
   const distribution = fc.dictionary(fc.string({ minLength: 1, maxLength: 8 }), unit, {
     minKeys: 1,
@@ -59,14 +71,7 @@ test("choice: unsure iff confidence < minConfidence, and ranked is descending th
       ) as ChoiceOutcome;
       if (out.unsure !== c < minConfidence) return false;
       if (out.ranked.length !== keys.length) return false;
-      for (let i = 1; i < out.ranked.length; i += 1) {
-        const prev = out.ranked[i - 1];
-        const here = out.ranked[i];
-        if (prev === undefined || here === undefined) return false;
-        if (prev[1] < here[1]) return false;
-        if (prev[1] === here[1] && compareByCodePoint(prev[0], here[0]) >= 0) return false;
-      }
-      return true;
+      return isRanked(out.ranked);
     }),
   );
 });
