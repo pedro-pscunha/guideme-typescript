@@ -461,12 +461,14 @@ test("illegal states are compiler errors", () => {
   /* eslint-enable @typescript-eslint/no-unsafe-call */
 });
 
-// The three routes README.md block 1 calls and leaves to the reader.
+// The five functions README.md block 1 calls and leaves to the reader.
+declare function escalate(): void;
 declare function routeBilling(): void;
 declare function routeTech(): void;
 declare function routeSales(): void;
+declare function prioritize(): void;
 
-// README.md block 7, the provider setup, at module scope: it is a statement list with no
+// README.md block 9, the provider setup, at module scope: it is a statement list with no
 // locals, and at the README's own indentation its longest line still fits the print width.
 // This file is type-checked and never executed, so the registration never happens.
 trace.setGlobalTracerProvider(
@@ -478,7 +480,7 @@ test("every README example compiles as written", async () => {
   // this file, `test/wire.test.ts` or `test/rubric-rules.test.ts`. The blocks the other cases
   // do not already carry are here, each in its own scope so their declarations do not collide,
   // and each followed by the type its README text promises.
-  // README.md block 1.
+  // README.md block 1, the quick start.
   {
     const Department = choice({
       billing: option("Payments, invoicing, refunds"),
@@ -498,18 +500,19 @@ test("every README example compiles as written", async () => {
       throw new Error(`unreachable: ${String(value)}`);
     };
 
-    async function triage(ticket: string): Promise<void> {
-      const guide = Guide.fromEnv(); // reads TYPESAFE_API_KEY
+    const guide = Guide.fromEnv(); // reads TYPESAFE_API_KEY
 
+    async function triage(ticket: string): Promise<void> {
       if (await guide.ask(noul("Should this ticket be escalated?"), ticket)) {
-        // escalate
+        escalate();
       }
 
-      route(await guide.ask(choose(Department, "Which team should handle this?"), ticket));
+      const team = choose(Department, "Which team should handle this?").minConfidence(0.6);
+      route(await guide.ask(team, ticket));
 
       const mood = await guide.ask(score(Frustration, "How frustrated is the customer?"), ticket);
       if (Frustration.atLeast(mood, "frustrated")) {
-        // prioritise
+        prioritize();
       }
     }
 
@@ -522,18 +525,43 @@ test("every README example compiles as written", async () => {
           routeTech();
           break;
         case "sales":
-          routeSales(); // also the answer when confidence is below the floor
+          routeSales(); // also the answer when confidence is less than 0.6
           break;
         default:
           assertNever(dept); // a compile error if a key is missing
       }
     }
+
+    await triage("I was charged twice this month");
     expectTypeOf<Department>().toEqualTypeOf<"billing" | "technical" | "sales">();
     expectTypeOf<Frustration>().toEqualTypeOf<"calm" | "frustrated" | "veryAngry">();
     expectTypeOf(triage).returns.resolves.toBeVoid();
   }
 
-  // README.md block 3.
+  // README.md block 2.
+  {
+    const CAUTIOUS: Policy = { yesAbove: 0.7, noBelow: 0.3 };
+
+    async function route(key: ApiKey, ticket: string): Promise<void> {
+      const guide = new Guide({ apiKey: key, policy: CAUTIOUS });
+      // yes at 0.9 or more, no at 0.3 or less, unsure between the two
+      const strict = guide.withPolicy({ yesAbove: 0.9 });
+
+      const verdict = await strict.ask(noul("Is this about billing?").detail(), ticket);
+      switch (verdict.verdict) {
+        case "yes":
+          break; // billing
+        case "no":
+          break; // everything else
+        case "unsure":
+          console.log(`a human decides: ${String(verdict.p)}`);
+          break;
+      }
+    }
+    expectTypeOf(route).returns.resolves.toBeVoid();
+  }
+
+  // README.md block 4.
   {
     async function urgent(guide: Guide, ticket: string): Promise<boolean> {
       return guide.ask(
@@ -550,7 +578,7 @@ test("every README example compiles as written", async () => {
     expectTypeOf(urgent).returns.resolves.toEqualTypeOf<boolean>();
   }
 
-  // README.md block 4.
+  // README.md block 5.
   {
     async function desk(guide: Guide, ticket: string): Promise<Key> {
       return guide.ask(
@@ -569,29 +597,7 @@ test("every README example compiles as written", async () => {
     expectTypeOf(desk).returns.resolves.toEqualTypeOf<Key>();
   }
 
-  // README.md block 5.
-  {
-    const CAUTIOUS: Policy = { yesAbove: 0.7, noBelow: 0.3 };
-
-    async function route(key: ApiKey, ticket: string): Promise<void> {
-      const guide = new Guide({ apiKey: key, policy: CAUTIOUS });
-      const strict = guide.withPolicy({ minConfidence: 0.8 });
-
-      const verdict = await strict.ask(noul("Is this about billing?").detail(), ticket);
-      switch (verdict.verdict) {
-        case "yes":
-          break; // billing
-        case "no":
-          break; // everything else
-        case "unsure":
-          console.log(`a human decides: ${String(verdict.p)}`);
-          break;
-      }
-    }
-    expectTypeOf(route).returns.resolves.toBeVoid();
-  }
-
-  // README.md block 8.
+  // README.md block 7.
   {
     /* eslint-disable @typescript-eslint/no-unused-expressions -- the README reads each field
        as a bare expression with its value in a comment; that is the example as written */
