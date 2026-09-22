@@ -4,7 +4,19 @@ import tseslint from "typescript-eslint";
 import importX from "eslint-plugin-import-x";
 import tsdoc from "eslint-plugin-tsdoc";
 
+// A `.catch` whose callback takes no parameter has thrown the failure away before anyone could
+// read it. Shared by the two blocks below that set `no-restricted-syntax`, because a later block
+// replaces the rule's options rather than adding to them.
+const swallowedCatch = {
+  selector:
+    "CallExpression[callee.property.name='catch'] > :matches(ArrowFunctionExpression, FunctionExpression)[params.length=0]",
+  message:
+    "A .catch callback that takes no parameter discards the failure. Name it and carry it: as a cause, a typed error, or a value that says what went wrong.",
+};
+
 export default defineConfig(
+  // An unused suppression is a stale claim about the code, so it fails like any other finding.
+  { linterOptions: { reportUnusedDisableDirectives: "error" } },
   globalIgnores([
     "dist/**",
     "node_modules/**",
@@ -30,6 +42,10 @@ export default defineConfig(
         "error",
         { considerDefaultExhaustiveForUnions: false },
       ],
+      // Fail loudly: an empty block or body is where a failure goes to be forgotten.
+      "no-empty": "error",
+      "@typescript-eslint/no-empty-function": "error",
+      "no-restricted-syntax": ["error", swallowedCatch],
     },
   },
   {
@@ -43,6 +59,7 @@ export default defineConfig(
       // TSTypeReference would allow every named-type cast, which is the whole population.
       "no-restricted-syntax": [
         "error",
+        swallowedCatch,
         {
           selector: "TSAsExpression:not([typeAnnotation.typeName.name='const'])",
           message:

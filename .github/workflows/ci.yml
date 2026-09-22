@@ -57,22 +57,18 @@ jobs:
 
   # The same suite under Bun, which is a different fetch, a different timer and a different
   # Response. Everything this package does at the wire is runtime-visible, so this is not a
-  # duplicate of the gate. `--bun` is what makes it Bun: vitest's bin starts with a node
-  # shebang, and `bun run` honours it, so without the flag this job would run the suite on the
-  # runner's Node a second time.
+  # duplicate of the gate. The task says why it needs `--bun`.
   bun:
     name: bun
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.2"
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - name: bun install --frozen-lockfile
         run: bun install --frozen-lockfile
-      - name: bun --bun run vitest run
-        run: bun --bun run vitest run
+      - name: mise run test-bun
+        run: mise run test-bun
 
   # The tracked pre-commit and pre-push hooks scan for secrets, but a hook is opt-in and
   # local. This is the copy that runs on every pull request, fork included, and on every
@@ -87,9 +83,8 @@ jobs:
           # The whole history: a secret on any commit is a leak, however old.
           fetch-depth: 0
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-      # Exit 2 is a leak, exit 1 is gitleaks failing to run. Both fail the job.
-      - name: gitleaks over the full history
-        run: gitleaks git --no-banner --redact --exit-code 2
+      - name: mise run secrets
+        run: mise run secrets
 
   # examples/otlp is its own package with its own lock file, and the root tsconfig and eslint
   # config do not reach it either, so the root gate only formats it. This job is the one that
@@ -124,28 +119,19 @@ jobs:
     name: min-node
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The floor is this job's to set, so mise must not install its own node over it.
+    env:
+      MISE_DISABLE_TOOLS: node
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22.0.0"
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: "1.4.2"
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - name: bun install --frozen-lockfile
         run: bun install --frozen-lockfile
-      - name: build and assert the engines floor agrees with this job
-        run: |
-          set -euo pipefail
-          claimed="$(node -p 'require("./package.json").engines.node')"
-          echo "package.json claims engines.node = ${claimed}; this job runs $(node -v)"
-          case "${claimed}" in
-            ">=22") ;;
-            *) echo "::error::this job pins 22.0.0 but package.json claims ${claimed}"; exit 1 ;;
-          esac
-          bun run tsc -p tsconfig.build.json
-      - name: import the built package on the floor
-        run: node -e "import('./dist/index.js').then(m => { if (typeof m.Guide !== 'function') { process.exit(1); } console.log('imported on', process.version); })"
+      - name: mise run min-node
+        run: mise run min-node
 
   # spec/ is vendored from guideme-rust and is the cross-SDK contract. A change lands there,
   # not here. This is the per-PR copy; spec-drift.yml is the weekly one.

@@ -232,7 +232,10 @@ mise run readme     # every ts block in README.md is compiled by a test, line fo
 mise run surface    # after build: dist/index.d.ts exports exactly scripts/exports.txt, no zod
 mise run example    # type-check and lint examples/otlp (needs its own bun install and dist/)
 mise run test       # vitest, including the typecheck file
-mise run lint       # eslint only
+mise run test-bun   # the suite under the Bun runtime (the `bun` CI job)
+mise run secrets    # gitleaks over the whole history (the `secrets` CI job)
+mise run min-node   # build, then import dist/ on the running node (the `min-node` CI job)
+mise run lint       # eslint only; a warning or an unused disable directive fails it
 mise run types      # tsc --noEmit over src and test
 mise run fallow     # dead code, duplication and health; zero findings, no baseline
 mise run spec-check # fail if the vendored spec/ has drifted from guideme-rust main

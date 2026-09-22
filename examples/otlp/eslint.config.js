@@ -15,6 +15,10 @@ export default defineConfig({
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-non-null-assertion": "error",
     "@typescript-eslint/consistent-type-imports": "error",
+    "@typescript-eslint/switch-exhaustiveness-check": [
+      "error",
+      { considerDefaultExhaustiveForUnions: false },
+    ],
     // An example is a program, not a library: printing is what it is for.
     "no-console": "off",
   },

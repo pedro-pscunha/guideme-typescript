@@ -13,7 +13,8 @@ run = "bun run prettier --check ."
 
 [tasks.lint]
 description = "ESLint, type-aware, warnings are errors"
-run = "bun run eslint ."
+# `--max-warnings 0` is what makes the description true: ESLint exits 0 on warnings otherwise.
+run = "bun run eslint --max-warnings 0 ."
 
 [tasks.types]
 description = "tsc --noEmit over src and test"
@@ -26,6 +27,17 @@ run = "bun run fallow --fail-on-issues"
 [tasks.test]
 description = "vitest, including the typecheck file"
 run = "bun run vitest run --typecheck"
+
+[tasks.test-bun]
+description = "The suite under the Bun runtime, which is what the `bun` CI job runs"
+# `--bun` is what makes it Bun: vitest's bin has a node shebang and `bun run` honours it, so
+# without the flag this would run the suite on Node a second time.
+run = "bun --bun run vitest run"
+
+[tasks.secrets]
+description = "gitleaks over the whole history, which is what the `secrets` CI job runs"
+# Exit 2 is a leak; exit 1 is gitleaks failing to run. Both fail the task.
+run = "gitleaks git --no-banner --redact --exit-code 2"
 
 [tasks.build]
 description = "Emit dist/ with declarations"
@@ -48,6 +60,24 @@ if grep -q zod dist/index.d.ts; then
   exit 1
 fi
 echo "dist/index.d.ts names no zod"
+'''
+
+[tasks.min-node]
+description = "Build, then import the built package on whatever node runs this"
+# The `min-node` CI job runs this on node 22.0.0, the floor `engines` promises. The floor it
+# checks against is read from package.json, so the two cannot drift: a change to `engines`
+# that this task does not also accept fails here.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+mise run build
+claimed="$(node -p 'require("./package.json").engines.node')"
+echo "package.json claims engines.node = ${claimed}; this runs $(node -v)"
+if [ "${claimed}" != ">=22" ]; then
+  echo "engines.node is ${claimed}; the min-node job pins 22.0.0 and must move with it" >&2
+  exit 1
+fi
+node --input-type=module -e "const m = await import('./dist/index.js'); if (typeof m.Guide !== 'function') { console.error('dist/index.js exports no Guide'); process.exit(1); } console.log('imported on', process.version);"
 '''
 
 [tasks.publint]
