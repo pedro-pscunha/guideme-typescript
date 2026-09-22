@@ -1,0 +1,9 @@
+{
+  "models": [
+    {
+      "name": "jev-latest",
+      "description": "The most recent stable release",
+      "release_date": "2026-08-01"
+    }
+  ]
+}
