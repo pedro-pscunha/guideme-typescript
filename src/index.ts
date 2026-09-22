@@ -6,6 +6,7 @@
  */
 
 export { Guide, type GuideOptions } from "./guide.js";
+export { type Answered, type Shape } from "./ask.js";
 export {
   choice,
   choose,
@@ -14,8 +15,14 @@ export {
   noul,
   score,
   scoreLevels,
+  type ChoiceDescriptor,
   type ChoiceQuestion,
+  type DetailedChoiceQuestion,
+  type DetailedNoulQuestion,
+  type DetailedScoreQuestion,
+  type Instructions,
   type Level,
+  type LevelsDescriptor,
   type NoulQuestion,
   type Option,
   type Question,
@@ -23,7 +30,15 @@ export {
   type ScoreQuestion,
   type Scored,
 } from "./question.js";
-export { fallback, level, option, type LevelRubric, type OptionRubric } from "./rubric.js";
+export {
+  fallback,
+  level,
+  option,
+  type LevelParts,
+  type LevelRubric,
+  type OptionParts,
+  type OptionRubric,
+} from "./rubric.js";
 export { type Policy, type Thresholds, type Verdict } from "./policy.js";
 export { type ModelInfo, type Receipt, type Usage } from "./receipt.js";
 export {
@@ -34,4 +49,4 @@ export {
   type Probability,
   type Rank,
 } from "./scalars.js";
-export { GuidemeError, type ErrorKind } from "./errors.js";
+export { GuidemeError, type ErrorKind, type GuidemeErrorOptions } from "./errors.js";

@@ -9,6 +9,7 @@ import responseJson from "../spec/schema/response.json" with { type: "json" };
 import { closedPort, startServer } from "./support/server.js";
 import { BAD_NOUL_AS_Q0, NOUL_AS_Q0 } from "./support/fixtures.js";
 import { ApiKey, Guide, choice, choose, levels, noul, option, score } from "../src/index.js";
+import type { ChoiceDescriptor } from "../src/index.js";
 import { createClient } from "../src/api/client.js";
 import type { Client } from "../src/api/client.js";
 import { model } from "../src/scalars.js";
@@ -383,7 +384,14 @@ test("a malformed body and an option outside the rubric are both protocol errors
   ).toBeInstanceOf(SyntaxError);
 });
 
-test("unsure with no fallback names the question; an empty batch is a config error", async () => {
+/** One named scenario of a table case, so a failure reports the scenario that broke. */
+interface Scenario {
+  readonly name: string;
+  readonly run: () => void | Promise<void>;
+}
+
+/** A guide whose server answers every request with a noul of exactly 0.5. */
+const halfGuide = async (): Promise<Guide> => {
   const server = await startServer([
     {
       status: 200,
@@ -394,92 +402,153 @@ test("unsure with no fallback names the question; an empty batch is a config err
       }),
     },
   ]);
-  const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl, backoff: 10 });
-  await expect(guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1), "x")).rejects.toMatchObject({
-    kind: "unsure",
-    question: "q0",
-  });
-  // A fallback resolves it instead of failing.
-  await expect(guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1).or(false), "x")).resolves.toBe(
-    false,
-  );
-  await expect(guide.ask([], "x")).rejects.toMatchObject({ kind: "config" });
-  await expect(guide.ask({}, "x")).rejects.toMatchObject({ kind: "config" });
+  return new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl, backoff: 10 });
+};
 
-  // The retry budget, the backoff and the deadline are refused at construction when they
-  // cannot mean what they say: a negative or fractional budget never reaches `last` and loops
-  // on, and a non-positive deadline surfaced as a transport failure on the first ask.
-  for (const bad of [
-    { maxRetries: -1 },
-    { maxRetries: 1.5 },
-    { maxRetries: Number.NaN },
-    { maxRetries: Number.POSITIVE_INFINITY },
-    { backoff: -1 },
-    { backoff: Number.NaN },
-    { backoff: Number.POSITIVE_INFINITY },
-    { timeout: 0 },
-    { timeout: -5 },
-    { timeout: Number.NaN },
-    { timeout: Number.POSITIVE_INFINITY },
-    // Node clamps a timer above 2^31-1 ms to 1 ms, so a larger deadline would fire at once.
-    { timeout: 2 ** 31 },
-  ]) {
-    expect(
-      () => new Guide({ apiKey: new ApiKey("k"), ...bad }),
-      `${JSON.stringify(bad)} is refused when the guide is built`,
-    ).toThrow(expect.objectContaining({ kind: "config" }));
-  }
-  // A descriptor assembled by hand — which the type forbids, so only JavaScript can hand one in
-  // — is refused when its keys and rubrics disagree, not padded with `null`: `null` means
-  // "described not at all", and inventing that would put a bare key on the wire nobody wrote.
-  // Built through `unknown` because the brand is what makes it a type error.
-  type Descriptor = Parameters<typeof choose>[0];
-  const handBuilt = (keys: readonly string[], rubrics: readonly unknown[]): Descriptor =>
-    ({ descriptor: "choice", keys, rubrics, fallbackKey: undefined }) as unknown as Descriptor;
-  await expect(
-    guide.ask(choose(handBuilt(["a", "b"], [option("a")]), "Which?"), "x"),
-    "a key without its rubric is a config error",
-  ).rejects.toMatchObject({ kind: "config" });
-  await expect(
-    guide.ask(choose(handBuilt(["a", "a"], [option("a"), option("b")]), "Which?"), "x"),
-    "a key given twice is a config error",
-  ).rejects.toMatchObject({ kind: "config" });
+// A descriptor assembled by hand — which the type forbids, so only JavaScript can hand one in
+// — is refused when its keys and rubrics disagree, not padded with `null`: `null` means
+// "described not at all", and inventing that would put a bare key on the wire nobody wrote.
+// Built through `unknown` because the brand is what makes it a type error.
+type Descriptor = ChoiceDescriptor<string>;
+const handBuilt = (keys: readonly string[], rubrics: readonly unknown[]): Descriptor =>
+  ({ descriptor: "choice", keys, rubrics, fallbackKey: undefined }) as unknown as Descriptor;
 
-  expect(
-    new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 2 ** 31 - 1 }),
-    "zero retries, zero backoff and the largest deadline a timer can hold are all legal",
-  ).toBeInstanceOf(Guide);
+const configAndUnsure: readonly Scenario[] = [
+  {
+    name: "unsure with no fallback names the question",
+    run: async () => {
+      const guide = await halfGuide();
+      await expect(
+        guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1), "x"),
+      ).rejects.toMatchObject({
+        kind: "unsure",
+        question: "q0",
+      });
+    },
+  },
+  {
+    name: "a fallback resolves an unsure answer instead of failing",
+    run: async () => {
+      const guide = await halfGuide();
+      await expect(
+        guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1).or(false), "x"),
+      ).resolves.toBe(false);
+    },
+  },
+  {
+    name: "an empty batch, as an array or an object, is a config error",
+    run: async () => {
+      const guide = await halfGuide();
+      await expect(guide.ask([], "x")).rejects.toMatchObject({ kind: "config" });
+      await expect(guide.ask({}, "x")).rejects.toMatchObject({ kind: "config" });
+    },
+  },
+  {
+    name: "a retry budget, backoff or deadline that cannot mean what it says is refused",
+    run: () => {
+      // Refused at construction: a negative or fractional budget never reaches `last` and
+      // loops on, and a non-positive deadline surfaced as a transport failure on the first ask.
+      for (const bad of [
+        { maxRetries: -1 },
+        { maxRetries: 1.5 },
+        { maxRetries: Number.NaN },
+        { maxRetries: Number.POSITIVE_INFINITY },
+        { backoff: -1 },
+        { backoff: Number.NaN },
+        { backoff: Number.POSITIVE_INFINITY },
+        { timeout: 0 },
+        { timeout: -5 },
+        { timeout: Number.NaN },
+        { timeout: Number.POSITIVE_INFINITY },
+        // Node clamps a timer above 2^31-1 ms to 1 ms, so a larger deadline would fire at once.
+        { timeout: 2 ** 31 },
+      ]) {
+        expect(
+          () => new Guide({ apiKey: new ApiKey("k"), ...bad }),
+          `${JSON.stringify(bad)} is refused when the guide is built`,
+        ).toThrow(expect.objectContaining({ kind: "config" }));
+      }
+    },
+  },
+  {
+    name: "zero retries, zero backoff and the largest timer deadline are legal",
+    run: () => {
+      expect(
+        new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 2 ** 31 - 1 }),
+        "zero retries, zero backoff and the largest deadline a timer can hold are all legal",
+      ).toBeInstanceOf(Guide);
+    },
+  },
+  {
+    name: "a hand-built descriptor with a key missing its rubric is a config error",
+    run: async () => {
+      const guide = await halfGuide();
+      await expect(
+        guide.ask(choose(handBuilt(["a", "b"], [option("a")]), "Which?"), "x"),
+        "a key without its rubric is a config error",
+      ).rejects.toMatchObject({ kind: "config" });
+    },
+  },
+  {
+    name: "a hand-built descriptor with a repeated key is a config error",
+    run: async () => {
+      const guide = await halfGuide();
+      await expect(
+        guide.ask(choose(handBuilt(["a", "a"], [option("a"), option("b")]), "Which?"), "x"),
+        "a key given twice is a config error",
+      ).rejects.toMatchObject({ kind: "config" });
+    },
+  },
+  // State is whatever `JSON.stringify` makes of it, checked after `toJSON` has run.
+  {
+    name: "a value shared by two state fields is not a cycle",
+    run: async () => {
+      const guide = await halfGuide();
+      const customer = { id: 7 };
+      await expect(
+        guide.ask(noul("Urgent?"), { a: customer, b: customer }),
+        "a shared reference is not a cycle",
+      ).resolves.toBe(true);
+    },
+  },
+  {
+    name: "a NaN that toJSON drops never reaches the JSON",
+    run: async () => {
+      const guide = await halfGuide();
+      class Masked {
+        readonly score = Number.NaN;
+        toJSON(): unknown {
+          return { masked: true };
+        }
+      }
+      await expect(
+        guide.ask(noul("Urgent?"), new Masked()),
+        "a NaN that toJSON removes never reaches the JSON",
+      ).resolves.toBe(true);
+    },
+  },
+  {
+    name: "a non-finite number, a bigint or a real cycle in state is refused",
+    run: async () => {
+      const guide = await halfGuide();
+      const cyclic: Record<string, unknown> = {};
+      cyclic["self"] = cyclic;
+      for (const [what, state] of [
+        ["a NaN", Number.NaN],
+        ["an Infinity inside an object", { n: Number.POSITIVE_INFINITY }],
+        ["a bigint", { n: 1n }],
+        ["a real cycle", cyclic],
+      ] as const) {
+        await expect(guide.ask(noul("Urgent?"), state), `${what} is refused`).rejects.toMatchObject(
+          { kind: "config" },
+        );
+      }
+    },
+  },
+];
 
-  // State is whatever `JSON.stringify` makes of it, checked after `toJSON` has run: a value
-  // shared by two fields is not a cycle, and a class whose `toJSON` drops a NaN field is fine.
-  // A non-finite number that would reach the JSON, a bigint and a real cycle are refused.
-  const customer = { id: 7 };
-  class Masked {
-    readonly score = Number.NaN;
-    toJSON(): unknown {
-      return { masked: true };
-    }
-  }
-  await expect(
-    guide.ask(noul("Urgent?"), { a: customer, b: customer }),
-    "a shared reference is not a cycle",
-  ).resolves.toBe(true);
-  await expect(
-    guide.ask(noul("Urgent?"), new Masked()),
-    "a NaN that toJSON removes never reaches the JSON",
-  ).resolves.toBe(true);
-  const cyclic: Record<string, unknown> = {};
-  cyclic["self"] = cyclic;
-  for (const [what, state] of [
-    ["a NaN", Number.NaN],
-    ["an Infinity inside an object", { n: Number.POSITIVE_INFINITY }],
-    ["a bigint", { n: 1n }],
-    ["a real cycle", cyclic],
-  ] as const) {
-    await expect(guide.ask(noul("Urgent?"), state), `${what} is refused`).rejects.toMatchObject({
-      kind: "config",
-    });
-  }
+test.each(configAndUnsure)("config and unsure: $name", async ({ run }) => {
+  await run();
 });
 
 test("askWithReceipt returns the response's model and usage exactly", async () => {
@@ -498,108 +567,125 @@ test("askWithReceipt returns the response's model and usage exactly", async () =
   expect(JSON.parse(server.received[0]?.body ?? "{}")).toMatchObject({ model: "jev-latest" });
 });
 
-test("ask returns the bare answer for every shape", async () => {
-  const Department = choice({ billing: option("b"), technical: option("t") });
-  const Frustration = levels({ calm: "Calm", frustrated: "Frustrated" });
-  const answers = {
-    q0: { type: "noul" as const, noul: 0.92 },
+// Five answers under q0..q4: the tuple below reads all five, a bare question reads only q0. The
+// extra answers a smaller ask does not need are ignored, because the reply is walked by the
+// plan's question ids rather than by what the body happens to carry.
+const FIVE_ANSWERS = JSON.stringify({
+  model: "jev-1.13.0",
+  answers: {
+    q0: { type: "noul", noul: 0.92 },
     q1: {
-      type: "choice" as const,
+      type: "choice",
       choice: "billing",
       probabilities: { billing: 0.9, technical: 0.1 },
       confidence: 0.95,
     },
     q2: {
-      type: "score" as const,
+      type: "score",
       score: 1,
       legend: { "0": "Calm", "1": "Frustrated" },
       probabilities: { "0": 0.1, "1": 0.9 },
       confidence: 0.9,
     },
-    q3: { type: "noul" as const, noul: 0.1 },
-    q4: { type: "noul" as const, noul: 0.8 },
-  };
-  const body = JSON.stringify({
-    model: "jev-1.13.0",
-    answers,
-    usage: { input_tokens: 11, output_tokens: 2 },
-  });
-  // Three replies, one per request this case makes: the tuple ask, the bare-question ask, and
-  // `models()`. The extra answers the second ask does not need are ignored, because the reply
-  // is walked by the plan's question ids rather than by what the body happens to carry.
-  const server = await startServer([
-    { status: 200, body },
-    { status: 200, body },
-    { status: 200, body: MODELS },
-  ]);
-  const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
+    q3: { type: "noul", noul: 0.1 },
+    q4: { type: "noul", noul: 0.8 },
+  },
+  usage: { input_tokens: 11, output_tokens: 2 },
+});
 
-  const result = await guide.ask(
-    [
-      noul("urgent?"),
-      choose(Department, "which team?"),
-      score(Frustration, "how cross?"),
-      { spam: noul("spam?"), vip: noul("vip?") },
-    ] as const,
-    "a ticket",
-  );
-  const [urgent, dept, mood, flags] = result;
-  expect(urgent, "a noul answers a boolean").toBe(true);
-  expect(dept, "a choice answers its option key").toBe("billing");
-  expect(mood, "a score answers its argmax level's key").toBe("frustrated");
-  expect(flags, "an object shape answers an object of the same keys").toEqual({
-    spam: false,
-    vip: true,
-  });
-
-  // The ids are q0..q4 in encounter order, depth first, and the object shape's two questions
-  // are the last two because they were written last.
-  const sent: unknown = JSON.parse(server.received[0]?.body ?? "{}");
-  expect(Object.keys(questionsOf(sent)), "ids are q0..qN in encounter order").toEqual([
-    "q0",
-    "q1",
-    "q2",
-    "q3",
-    "q4",
-  ]);
-
-  // A plain array is an array, not a tuple, and a bare question is its own answer.
-  await expect(guide.ask(noul("urgent?"), "x"), "a bare question is its own answer").resolves.toBe(
-    true,
-  );
-
-  // models() copies the wire entry into this package's own shape, snake to camel.
-  const catalogue = await guide.models();
-  expect(catalogue, "models() answers this package's shape, snake to camel").toEqual([
-    {
-      name: "jev-latest",
-      description: "The most recent stable release",
-      releaseDate: "2026-08-01",
+const shapesAndModels: readonly Scenario[] = [
+  {
+    name: "a tuple answers each member in place, with ids q0..qN in encounter order",
+    run: async () => {
+      const server = await startServer([{ status: 200, body: FIVE_ANSWERS }]);
+      const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
+      const Department = choice({ billing: option("b"), technical: option("t") });
+      const Frustration = levels({ calm: "Calm", frustrated: "Frustrated" });
+      const [urgent, dept, mood, flags] = await guide.ask(
+        [
+          noul("urgent?"),
+          choose(Department, "which team?"),
+          score(Frustration, "how cross?"),
+          { spam: noul("spam?"), vip: noul("vip?") },
+        ] as const,
+        "a ticket",
+      );
+      expect(urgent, "a noul answers a boolean").toBe(true);
+      expect(dept, "a choice answers its option key").toBe("billing");
+      expect(mood, "a score answers its argmax level's key").toBe("frustrated");
+      expect(flags, "an object shape answers an object of the same keys").toEqual({
+        spam: false,
+        vip: true,
+      });
+      // Depth first, and the object shape's two questions are the last two because they were
+      // written last.
+      const sent: unknown = JSON.parse(server.received[0]?.body ?? "{}");
+      expect(Object.keys(questionsOf(sent)), "ids are q0..qN in encounter order").toEqual([
+        "q0",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
+      ]);
     },
-  ]);
-  expect(Object.isFrozen(catalogue[0]), "a catalogue entry is frozen").toBe(true);
+  },
+  {
+    name: "a bare question is its own answer",
+    run: async () => {
+      const server = await startServer([{ status: 200, body: FIVE_ANSWERS }]);
+      const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
+      await expect(
+        guide.ask(noul("urgent?"), "x"),
+        "a bare question is its own answer",
+      ).resolves.toBe(true);
+    },
+  },
+  {
+    name: "models() copies the wire entry into this package's shape, snake to camel",
+    run: async () => {
+      const server = await startServer([{ status: 200, body: MODELS }]);
+      const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
+      const catalogue = await guide.models();
+      expect(catalogue, "models() answers this package's shape, snake to camel").toEqual([
+        {
+          name: "jev-latest",
+          description: "The most recent stable release",
+          releaseDate: "2026-08-01",
+        },
+      ]);
+      expect(Object.isFrozen(catalogue[0]), "a catalogue entry is frozen").toBe(true);
+    },
+  },
+  {
+    name: "an integer-like object key is encountered first, as JavaScript orders it",
+    run: async () => {
+      // JavaScript reorders integer-like keys ahead of string keys, so "1" is encountered
+      // before "2" whatever the caller wrote. docs/contract.md records this as the TypeScript
+      // spelling of the encounter-order rule; the assertion is here so it cannot change
+      // unnoticed.
+      const twoBody = JSON.stringify({
+        model: "jev-1.13.0",
+        answers: { q0: { type: "noul", noul: 0.9 }, q1: { type: "noul", noul: 0.1 } },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+      const ordered = await startServer([{ status: 200, body: twoBody }]);
+      const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: ordered.baseUrl });
+      const answered = await guide.ask({ "2": noul("second"), "1": noul("first") }, "x");
+      const ordering: unknown = JSON.parse(ordered.received[0]?.body ?? "{}");
+      expect(
+        questionsOf(ordering)["q0"]?.instructions,
+        "an integer-like key is encountered first, as JavaScript orders it",
+      ).toBe("first");
+      expect(answered, "each answer comes back under the key it was asked by").toEqual({
+        "1": true,
+        "2": false,
+      });
+    },
+  },
+];
 
-  // And the object-shape ordering rule, in the same case so the budget stays at 40. JavaScript
-  // reorders integer-like keys ahead of string keys, so "1" is encountered before "2" whatever
-  // the caller wrote. docs/contract.md records this as the TypeScript spelling of the
-  // encounter-order rule; the assertion is here so it cannot change unnoticed.
-  const twoBody = JSON.stringify({
-    model: "jev-1.13.0",
-    answers: { q0: { type: "noul", noul: 0.9 }, q1: { type: "noul", noul: 0.1 } },
-    usage: { input_tokens: 1, output_tokens: 1 },
-  });
-  const ordered = await startServer([{ status: 200, body: twoBody }]);
-  const second = new Guide({ apiKey: new ApiKey("k"), baseUrl: ordered.baseUrl });
-  const answered = await second.ask({ "2": noul("second"), "1": noul("first") }, "x");
-  const ordering: unknown = JSON.parse(ordered.received[0]?.body ?? "{}");
-  expect(
-    questionsOf(ordering)["q0"]?.instructions,
-    "an integer-like key is encountered first, as JavaScript orders it",
-  ).toBe("first");
-  expect(answered, "each answer comes back under the key it was asked by").toEqual({
-    "1": true,
-    "2": false,
-  });
+test.each(shapesAndModels)("shapes and models(): $name", async ({ run }) => {
+  await run();
 });
 
 test("an injected fetch is the only transport, and the README recipe is this input", async () => {

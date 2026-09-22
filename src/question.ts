@@ -41,11 +41,22 @@ const isOwnKey = <S extends object>(spec: S, k: string): k is Extract<keyof S, s
 const keysOf = <S extends object>(spec: S): Extract<keyof S, string>[] =>
   Object.keys(spec).filter((k) => isOwnKey(spec, k));
 
+/**
+ * The key a question's answer type is carried under, in the type only.
+ *
+ * `Out` otherwise appears only in `or`'s parameter and in the recursive return types, so it
+ * was a free label: `DetailedChoiceQuestion<number>` accepted a real `.detail()`, and a choice
+ * over one key set passed for a choice over another. An optional member typed `Out` makes the
+ * parameter structural and covariant. No value ever carries it, and this symbol is not
+ * exported, so no caller can write one either.
+ */
+declare const answer: unique symbol;
+
 /** What a question is asked about: text, or a structured object holding it. */
-type Instructions = string | Readonly<Record<string, unknown>>;
+export type Instructions = string | Readonly<Record<string, unknown>>;
 
 /** An ordered set of options, declared once and reused. Built by {@link choice}. */
-interface ChoiceDescriptor<K extends string> {
+export interface ChoiceDescriptor<K extends string> {
   /** Set only by {@link choice}, so a lookalike built by hand is a type error. */
   readonly [brand]: "choice";
   /** Discriminant. */
@@ -136,8 +147,11 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
   });
 };
 
-/** An ordered scale, declared once. Declaration order is level order, low to high. */
-interface LevelsDescriptor<K extends string> {
+/**
+ * An ordered scale, declared once. Declaration order is level order, low to high. Built by
+ * {@link levels}.
+ */
+export interface LevelsDescriptor<K extends string> {
   /** Set only by {@link levels}, so a lookalike built by hand is a type error. */
   readonly [brand]: "levels";
   /** Discriminant. */
@@ -195,6 +209,8 @@ export const levels = <const S extends Readonly<Record<string, string | LevelRub
 export interface NoulQuestion<Out = boolean> {
   /** Discriminant. */
   readonly kind: "noul";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): NoulQuestion<Out>;
   /** `p \>= yesAbove` is yes. */
@@ -213,6 +229,8 @@ export interface NoulQuestion<Out = boolean> {
 export interface ChoiceQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "choice";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ChoiceQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -227,6 +245,8 @@ export interface ChoiceQuestion<K extends string, Out = K> {
 export interface ScoreQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "score";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ScoreQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -240,15 +260,17 @@ export interface ScoreQuestion<K extends string, Out = K> {
 // A question asked for its full reading has NO `or`, and that is the whole point of these
 // three interfaces. `readAnswer` dispatches on `detailed` before it looks at a fallback, so a
 // value set after `.detail()` would be silently discarded; Rust says the same thing by not
-// implementing `Fallible` for `Detailed<K>`. They are exported for `src/ask.ts`, which needs
-// them in `Shape` and `Answered`, and are NOT re-exported from `src/index.ts`: a caller meets
-// one only as the return type of `detail()`, which is why the public surface stays at thirteen
-// values and twenty-three types.
+// implementing `Fallible` for `Detailed<K>`. `src/ask.ts` needs them in `Shape` and `Answered`,
+// and `src/index.ts` re-exports them so a caller annotating a function that returns one writes
+// its name rather than `ReturnType<NoulQuestion["detail"]>`.
 //
 // The choice and score ones are parameterised by the ANSWER rather than by the key, because
 // that is the type argument `Answered` reads straight back off the reference.
 
-/** A noul asked for its full reading. Answers {@link Verdict}. */
+/**
+ * A noul asked for its full reading: what `.detail()` returns. Answers {@link Verdict}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedNoulQuestion {
   /** Discriminant. */
   readonly kind: "noul";
@@ -262,20 +284,30 @@ export interface DetailedNoulQuestion {
   criteria(yes: string | OptionRubric, no: string | OptionRubric): DetailedNoulQuestion;
 }
 
-/** A choice asked for its full reading. Answers {@link Ranked}. */
+/**
+ * A choice asked for its full reading: what `.detail()` returns. Answers {@link Ranked}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedChoiceQuestion<Out> {
   /** Discriminant. */
   readonly kind: "choice";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedChoiceQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
   minConfidence(c: number): DetailedChoiceQuestion<Out>;
 }
 
-/** A score asked for its full reading. Answers {@link Scored}. */
+/**
+ * A score asked for its full reading: what `.detail()` returns. Answers {@link Scored}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedScoreQuestion<Out> {
   /** Discriminant. */
   readonly kind: "score";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedScoreQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -362,6 +394,8 @@ interface NoulState<Out> {
 
 class NoulImpl<Out> {
   readonly kind = "noul" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: NoulState<Out>;
 
   constructor(s: NoulState<Out>) {
@@ -470,6 +504,8 @@ interface ChoiceState<K extends string, Out> {
 
 class ChoiceImpl<K extends string, Out> {
   readonly kind = "choice" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: ChoiceState<K, Out>;
 
   constructor(s: ChoiceState<K, Out>) {
@@ -581,6 +617,8 @@ interface ScoreState<K extends string, Out> {
 
 class ScoreImpl<K extends string, Out> {
   readonly kind = "score" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: ScoreState<K, Out>;
 
   constructor(s: ScoreState<K, Out>) {

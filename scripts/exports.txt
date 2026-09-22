@@ -4,6 +4,8 @@
 
 Guide
 type GuideOptions
+type Answered
+type Shape
 choice
 choose
 chooseAmong
@@ -11,8 +13,14 @@ levels
 noul
 score
 scoreLevels
+type ChoiceDescriptor
 type ChoiceQuestion
+type DetailedChoiceQuestion
+type DetailedNoulQuestion
+type DetailedScoreQuestion
+type Instructions
 type Level
+type LevelsDescriptor
 type NoulQuestion
 type Option
 type Question
@@ -22,7 +30,9 @@ type Scored
 fallback
 level
 option
+type LevelParts
 type LevelRubric
+type OptionParts
 type OptionRubric
 type Policy
 type Thresholds
@@ -38,3 +48,4 @@ type Probability
 type Rank
 GuidemeError
 type ErrorKind
+type GuidemeErrorOptions

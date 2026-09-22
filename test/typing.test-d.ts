@@ -19,17 +19,28 @@ import {
   option,
   score,
   scoreLevels,
+  type Answered,
+  type ChoiceDescriptor,
   type ChoiceQuestion,
   type Confidence,
+  type DetailedChoiceQuestion,
+  type DetailedNoulQuestion,
+  type DetailedScoreQuestion,
   type ErrorKind,
   type GuideOptions,
+  type GuidemeError,
+  type GuidemeErrorOptions,
+  type Instructions,
   type Key,
   type Level,
   type LevelRubric,
+  type LevelParts,
+  type LevelsDescriptor,
   type Model,
   type ModelInfo,
   type NoulQuestion,
   type Option,
+  type OptionParts,
   type OptionRubric,
   type Policy,
   type Probability,
@@ -39,6 +50,7 @@ import {
   type Receipt,
   type ScoreQuestion,
   type Scored,
+  type Shape,
   type Thresholds,
   type Usage,
   type Verdict,
@@ -66,6 +78,8 @@ type Frustration = Level<typeof Frustration>;
 
 declare const guide: Guide;
 declare const ticket: string;
+declare const optionParts: OptionParts;
+declare const levelParts: LevelParts;
 
 test("the option and level types are exactly the key unions", () => {
   expectTypeOf<Department>().toEqualTypeOf<"billing" | "technical" | "sales">();
@@ -156,6 +170,34 @@ test("probabilities, confidences and model names are branded where the wire pars
   expectTypeOf<ModelInfo["name"]>().toEqualTypeOf<Model>();
 });
 
+test("the types a constructor or a method returns are named, not reached through ReturnType", () => {
+  // Each of these was once nameable only as `ReturnType<..>` or `Parameters<..>`, and a caller
+  // annotating a function would have made that spelling the de facto API.
+  expectTypeOf(Department).toEqualTypeOf<ChoiceDescriptor<Department>>();
+  expectTypeOf(Frustration).toEqualTypeOf<LevelsDescriptor<Frustration>>();
+  expectTypeOf(noul("a").detail()).toEqualTypeOf<DetailedNoulQuestion>();
+  expectTypeOf(choose(Department, "a").detail()).toEqualTypeOf<
+    DetailedChoiceQuestion<Ranked<Department>>
+  >();
+  expectTypeOf(score(Frustration, "a").detail()).toEqualTypeOf<
+    DetailedScoreQuestion<Scored<Frustration>>
+  >();
+  expectTypeOf<ConstructorParameters<typeof GuidemeError>[2]>().toEqualTypeOf<
+    GuidemeErrorOptions | undefined
+  >();
+  // A wrapper generic over what `ask` takes says so in `ask`'s own terms, and infers.
+  const wrap = <S extends Shape>(g: Guide, s: S): Promise<Answered<S>> => g.ask(s, ticket);
+  expectTypeOf(wrap(guide, noul("a"))).resolves.toEqualTypeOf<boolean>();
+  expectTypeOf(wrap(guide, [noul("a"), choose(Department, "b")] as const)).resolves.toEqualTypeOf<
+    readonly [boolean, Department]
+  >();
+  expectTypeOf(noul).parameter(0).toEqualTypeOf<Instructions>();
+  expectTypeOf(option).parameter(1).toEqualTypeOf<OptionParts | undefined>();
+  expectTypeOf(option("x", optionParts)).toEqualTypeOf<OptionRubric>();
+  expectTypeOf(level).parameter(1).toEqualTypeOf<LevelParts | undefined>();
+  expectTypeOf(level("x", levelParts)).toEqualTypeOf<LevelRubric>();
+});
+
 test("askWithReceipt wraps every shape", async () => {
   expectTypeOf(await guide.askWithReceipt(noul("a"), ticket)).toEqualTypeOf<Receipt<boolean>>();
   expectTypeOf(
@@ -178,17 +220,27 @@ test("askWithReceipt wraps every shape", async () => {
  * naming it here would not compile.
  */
 type ExportedTypes = [
+  Answered<NoulQuestion>,
+  ChoiceDescriptor<Department>,
   ChoiceQuestion<Department>,
   Confidence,
+  DetailedChoiceQuestion<Ranked<Department>>,
+  DetailedNoulQuestion,
+  DetailedScoreQuestion<Scored<Frustration>>,
   ErrorKind,
   GuideOptions,
+  GuidemeErrorOptions,
+  Instructions,
   Key,
   Level<typeof Frustration>,
+  LevelParts,
   LevelRubric,
+  LevelsDescriptor<Frustration>,
   Model,
   ModelInfo,
   NoulQuestion,
   Option<typeof Department>,
+  OptionParts,
   OptionRubric,
   Policy,
   Probability,
@@ -198,13 +250,14 @@ type ExportedTypes = [
   Receipt<boolean>,
   ScoreQuestion<Frustration>,
   Scored<Frustration>,
+  Shape,
   Thresholds,
   Usage,
   Verdict,
 ];
 
 test("the exported TYPE surface is exactly this list", () => {
-  expectTypeOf<ExportedTypes["length"]>().toEqualTypeOf<23>();
+  expectTypeOf<ExportedTypes["length"]>().toEqualTypeOf<34>();
   expectTypeOf<ErrorKind>().toEqualTypeOf<
     | "auth"
     | "invalid"
@@ -225,7 +278,7 @@ type ZodShaped = {
 
 test("no exported type is a zod schema type", () => {
   // Per member, not over the union: a union is assignable to `ZodType` only when every member
-  // is, so `.not` on the union would pass with twenty-two of twenty-three zod-shaped. The gate
+  // is, so `.not` on the union would pass with thirty-three of thirty-four zod-shaped. The gate
   // also refuses a `zod` reference in `dist/index.d.ts` itself, after the build.
   expectTypeOf<ZodShaped>().toEqualTypeOf<never>();
   expectTypeOf<Receipt<boolean>["usage"]>().toEqualTypeOf<{
@@ -241,6 +294,13 @@ const assertNever = (x: never): never => {
 // `declare` is only legal at module scope, so the ambient values every case below needs are
 // hoisted here rather than written inside a test body.
 declare const dept: Department;
+declare function takesAb(d: ChoiceDescriptor<"a" | "b">): void;
+declare function takesDetailedZ(q: DetailedChoiceQuestion<Ranked<"z">>): void;
+declare function takesDetailedNumber(q: DetailedChoiceQuestion<number>): void;
+declare function takesScoredZ(q: DetailedScoreQuestion<Scored<"z">>): void;
+declare function takesChoiceZ(q: ChoiceQuestion<"z", Department>): void;
+declare function takesBillingOnly(q: ChoiceQuestion<Department, "billing">): void;
+declare function takesAlwaysYes(q: NoulQuestion<true>): void;
 
 test("illegal states are compiler errors", () => {
   // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- the missing arm IS the case: the directive below is what proves the compiler reports it
@@ -291,6 +351,29 @@ test("illegal states are compiler errors", () => {
 
   // @ts-expect-error a descriptor comes from choice(); a lookalike built by hand has no brand
   choose({ descriptor: "choice", keys: ["a", "b"], rubrics: [], fallbackKey: undefined }, "Which?");
+
+  // Naming the descriptor type does not make a lookalike legal: the brand is still unwritable.
+  // @ts-expect-error a parameter typed ChoiceDescriptor still takes only what choice() built
+  takesAb({ descriptor: "choice", keys: ["a", "b"], rubrics: [], fallbackKey: undefined });
+
+  // A question's answer type is carried structurally, so neither parameter is a free label.
+  // @ts-expect-error a detail() of Department is not the detailed type of another key set
+  takesDetailedZ(choose(Department, "Which?").detail());
+
+  // @ts-expect-error a detailed choice answers a Ranked, never a number
+  takesDetailedNumber(choose(Department, "Which?").detail());
+
+  // @ts-expect-error a detail() of Frustration is not the detailed score of another scale
+  takesScoredZ(score(Frustration, "How cross?").detail());
+
+  // @ts-expect-error a choice over Department is not a choice over another key set
+  takesChoiceZ(choose(Department, "Which?"));
+
+  // @ts-expect-error nor can its answer be narrowed to one of its keys by annotation
+  takesBillingOnly(choose(Department, "Which?"));
+
+  // @ts-expect-error a noul answers a boolean, not only true
+  takesAlwaysYes(noul("Urgent?"));
 
   // @ts-expect-error a rubric comes from option(); a lookalike built by hand has no brand
   choice({

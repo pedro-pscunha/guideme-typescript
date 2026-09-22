@@ -173,5 +173,5 @@ declaration either SDK refuses, the other refuses.
 after it would be discarded without a word. Rust says this by not implementing `Fallible` for
 `Detailed<K>`; here `detail()` returns its own interface, carrying `with` and the threshold
 setters and no `or`, so `noul("…").detail().or(x)` does not compile. Those three interfaces are
-not on the public surface — a caller meets one only as the return type of `detail()` — so the
-surface stays at thirteen values and twenty-three types.
+exported by name, so a caller annotating a function that returns one writes
+`DetailedNoulQuestion` rather than `ReturnType<NoulQuestion["detail"]>`.
