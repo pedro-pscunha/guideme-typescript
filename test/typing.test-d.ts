@@ -1,6 +1,14 @@
 import { expectTypeOf, test } from "vitest";
+import type { ZodType } from "zod";
+import {
+  BasicTracerProvider,
+  ConsoleSpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import { trace } from "@opentelemetry/api";
 import {
   ApiKey,
+  Guide,
   choice,
   choose,
   chooseAmong,
@@ -13,7 +21,6 @@ import {
   scoreLevels,
   type ChoiceQuestion,
   type Confidence,
-  type Guide,
   type ErrorKind,
   type GuideOptions,
   type Key,
@@ -47,9 +54,11 @@ const Department = choice({
 });
 type Department = Option<typeof Department>;
 
+// The README's own declaration, character for character, so the examples below that name
+// `Frustration` are checked against the scale the README actually declares.
 const Frustration = levels({
   calm: "Calm and polite",
-  frustrated: level("Frustrated", { examples: ["this is the third time I'm writing"] }),
+  frustrated: "Frustrated",
   veryAngry: "Very angry",
 });
 type Frustration = Level<typeof Frustration>;
@@ -60,6 +69,12 @@ declare const ticket: string;
 test("the option and level types are exactly the key unions", () => {
   expectTypeOf<Department>().toEqualTypeOf<"billing" | "technical" | "sales">();
   expectTypeOf<Frustration>().toEqualTypeOf<"calm" | "frustrated" | "veryAngry">();
+  // And a level carrying examples keeps its key, exactly as a plain string level does.
+  const WithExamples = levels({
+    calm: "Calm and polite",
+    frustrated: level("Frustrated", { examples: ["this is the third time I'm writing"] }),
+  });
+  expectTypeOf(WithExamples.keys).items.toEqualTypeOf<"calm" | "frustrated">();
 });
 
 test("a single question yields its own type", async () => {
@@ -139,10 +154,12 @@ test("askWithReceipt wraps every shape", async () => {
  * Every type `src/index.ts` exports, named once, in one declaration.
  *
  * This is the other half of `test/surface.test.ts`: `Object.keys` sees runtime values only,
- * because types are erased. Removing or renaming an export breaks this declaration, and adding
- * one without listing it breaks the arity assertion below. `Outcome` is deliberately absent:
- * it is the policy's internal reading, and `Verdict`, `Ranked` and `Scored` are what a caller
- * sees, so naming it here would not compile.
+ * because types are erased. Removing or renaming an export breaks this declaration. It cannot
+ * see an export being ADDED — the arity below counts this list, not the module — and
+ * `scripts/check-exports.mjs`, run by the gate after the build, is what catches that, against
+ * the names `dist/index.d.ts` actually carries. `Outcome` is deliberately absent: it is the
+ * policy's internal reading, and `Verdict`, `Ranked` and `Scored` are what a caller sees, so
+ * naming it here would not compile.
  */
 type ExportedTypes = [
   ChoiceQuestion<Department>,
@@ -185,9 +202,16 @@ test("the exported TYPE surface is exactly this list", () => {
   >();
 });
 
-test("no exported type is assignable from a zod schema type", () => {
-  // `zod` is not imported by this file and appears in no emitted declaration. The structural
-  // proof is that `Receipt["usage"]` has exactly two number fields and nothing zod-shaped.
+/** The positions in `ExportedTypes` whose type is a zod schema. `never` when there are none. */
+type ZodShaped = {
+  [K in keyof ExportedTypes]: ExportedTypes[K] extends ZodType ? K : never;
+}[number];
+
+test("no exported type is a zod schema type", () => {
+  // Per member, not over the union: a union is assignable to `ZodType` only when every member
+  // is, so `.not` on the union would pass with twenty-two of twenty-three zod-shaped. The gate
+  // also refuses a `zod` reference in `dist/index.d.ts` itself, after the build.
+  expectTypeOf<ZodShaped>().toEqualTypeOf<never>();
   expectTypeOf<Receipt<boolean>["usage"]>().toEqualTypeOf<{
     readonly inputTokens: number;
     readonly outputTokens: number;
@@ -286,4 +310,147 @@ test("illegal states are compiler errors", () => {
   // @ts-expect-error still detailed after with(), so still no or()
   noul("Urgent?").detail().with({ yesAbove: 0.9 }).or(true);
   /* eslint-enable @typescript-eslint/no-unsafe-call */
+});
+
+// The three routes README.md block 1 calls and leaves to the reader.
+declare function routeBilling(): void;
+declare function routeTech(): void;
+declare function routeSales(): void;
+
+// README.md block 7, the provider setup, at module scope: it is a statement list with no
+// locals, and at the README's own indentation its longest line still fits the print width.
+// This file is type-checked and never executed, so the registration never happens.
+trace.setGlobalTracerProvider(
+  new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(new ConsoleSpanExporter())] }),
+);
+
+test("every README example compiles as written", async () => {
+  // `scripts/check-readme.mjs` holds every ```ts block in README.md to a line-for-line copy in
+  // this file, `test/wire.test.ts` or `test/rubric-rules.test.ts`. The blocks the other cases
+  // do not already carry are here, each in its own scope so their declarations do not collide,
+  // and each followed by the type its README text promises.
+  // README.md block 1.
+  {
+    const Department = choice({
+      billing: option("Payments, invoicing, refunds"),
+      technical: option("Bugs, outages, integrations"),
+      sales: fallback("Pricing, upgrades, new accounts"),
+    });
+    type Department = Option<typeof Department>; // "billing" | "technical" | "sales"
+
+    const Frustration = levels({
+      calm: "Calm and polite",
+      frustrated: "Frustrated",
+      veryAngry: "Very angry",
+    });
+    type Frustration = Level<typeof Frustration>; // "calm" | "frustrated" | "veryAngry"
+
+    const assertNever = (value: never): never => {
+      throw new Error(`unreachable: ${String(value)}`);
+    };
+
+    async function triage(ticket: string): Promise<void> {
+      const guide = Guide.fromEnv(); // reads TYPESAFE_API_KEY
+
+      if (await guide.ask(noul("Should this ticket be escalated?"), ticket)) {
+        // escalate
+      }
+
+      route(await guide.ask(choose(Department, "Which team should handle this?"), ticket));
+
+      const mood = await guide.ask(score(Frustration, "How frustrated is the customer?"), ticket);
+      if (Frustration.atLeast(mood, "frustrated")) {
+        // prioritise
+      }
+    }
+
+    function route(dept: Department): void {
+      switch (dept) {
+        case "billing":
+          routeBilling();
+          break;
+        case "technical":
+          routeTech();
+          break;
+        case "sales":
+          routeSales(); // also the answer when confidence is below the floor
+          break;
+        default:
+          assertNever(dept); // a compile error if a key is missing
+      }
+    }
+    expectTypeOf<Department>().toEqualTypeOf<"billing" | "technical" | "sales">();
+    expectTypeOf<Frustration>().toEqualTypeOf<"calm" | "frustrated" | "veryAngry">();
+    expectTypeOf(triage).returns.resolves.toBeVoid();
+  }
+
+  // README.md block 3.
+  {
+    async function urgent(guide: Guide, ticket: string): Promise<boolean> {
+      return guide.ask(
+        noul("Is this ticket urgent?").criteria(
+          option("Something is broken now and nobody can work around it", {
+            examples: ["the checkout page is down"],
+            counterexamples: ["a nightly job failed and we pull the numbers by hand for now"],
+          }),
+          "It can wait for the next working day",
+        ),
+        ticket,
+      );
+    }
+    expectTypeOf(urgent).returns.resolves.toEqualTypeOf<boolean>();
+  }
+
+  // README.md block 4.
+  {
+    async function desk(guide: Guide, ticket: string): Promise<Key> {
+      return guide.ask(
+        chooseAmong("Which desk?", {
+          returns: option("Whether an item can be returned", {
+            examples: ["Can I return these?"],
+            counterexamples: ["Has my return arrived yet?"],
+          }),
+          tracking: option("Progress of a return already sent", {
+            examples: ["Has my return arrived yet?"],
+          }),
+        }),
+        ticket,
+      );
+    }
+    expectTypeOf(desk).returns.resolves.toEqualTypeOf<Key>();
+  }
+
+  // README.md block 5.
+  {
+    const CAUTIOUS: Policy = { yesAbove: 0.7, noBelow: 0.3 };
+
+    async function route(key: ApiKey, ticket: string): Promise<void> {
+      const guide = new Guide({ apiKey: key, policy: CAUTIOUS });
+      const strict = guide.withPolicy({ minConfidence: 0.8 });
+
+      const verdict = await strict.ask(noul("Is this about billing?").detail(), ticket);
+      switch (verdict.verdict) {
+        case "yes":
+          break; // billing
+        case "no":
+          break; // everything else
+        case "unsure":
+          console.log(`a human decides: ${String(verdict.p)}`);
+          break;
+      }
+    }
+    expectTypeOf(route).returns.resolves.toBeVoid();
+  }
+
+  // README.md block 8.
+  {
+    /* eslint-disable @typescript-eslint/no-unused-expressions -- the README reads each field
+       as a bare expression with its value in a comment; that is the example as written */
+    const receipt = await guide.askWithReceipt(noul("Urgent?"), ticket);
+    receipt.answer; // true
+    receipt.model; // "jev-1.13.0" — the versioned id, not the alias that was sent
+    receipt.usage; // { inputTokens: 307, outputTokens: 20 } — input tokens are the billed ones
+    /* eslint-enable @typescript-eslint/no-unused-expressions */
+    expectTypeOf(receipt).toEqualTypeOf<Receipt<boolean>>();
+  }
 });

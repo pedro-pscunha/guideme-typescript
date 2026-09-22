@@ -40,7 +40,15 @@ async function triage(ticket: string): Promise<void> {
     // escalate
   }
 
-  const dept = await guide.ask(choose(Department, "Which team should handle this?"), ticket);
+  route(await guide.ask(choose(Department, "Which team should handle this?"), ticket));
+
+  const mood = await guide.ask(score(Frustration, "How frustrated is the customer?"), ticket);
+  if (Frustration.atLeast(mood, "frustrated")) {
+    // prioritise
+  }
+}
+
+function route(dept: Department): void {
   switch (dept) {
     case "billing":
       routeBilling();
@@ -53,11 +61,6 @@ async function triage(ticket: string): Promise<void> {
       break;
     default:
       assertNever(dept); // a compile error if a key is missing
-  }
-
-  const mood = await guide.ask(score(Frustration, "How frustrated is the customer?"), ticket);
-  if (Frustration.atLeast(mood, "frustrated")) {
-    // prioritise
   }
 }
 ```
@@ -366,10 +369,10 @@ const answers = {
     confidence: 0.95,
   },
 };
+const calls: { url: string; authorization: string | null }[] = [];
 const fakeFetch: typeof globalThis.fetch = (input, init) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  expect(url).toContain("/v1/systemone");
-  expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-test");
+  calls.push({ url, authorization: new Headers(init?.headers).get("authorization") });
   return Promise.resolve(
     new Response(
       JSON.stringify({
@@ -389,6 +392,9 @@ const [urgent, dept] = await guide.ask(
 );
 expect(urgent).toBe(true);
 expect(dept).toBe("billing");
+expect(calls).toEqual([
+  { url: "https://api.typesafe.ai/v1/systemone", authorization: "Bearer sk-test" },
+]);
 ```
 
 Question ids are `q0..qN` in encounter order, so a batch answers `q0`, `q1` and so on in the
@@ -450,7 +456,7 @@ gitleaks at the pinned versions.
 ```sh
 mise install
 bun install
-mise run check    # fmt-check, lint, types, fallow, test, build, publint, attw, audit
+mise run check    # fmt-check, lint, types, readme, fallow, test, build, surface, publint, attw, audit
 mise run test     # vitest, including the typecheck file
 mise run hooks    # point core.hooksPath at the tracked hooks in .githooks
 ```

@@ -31,6 +31,25 @@ run = "bun run vitest run --typecheck"
 description = "Emit dist/ with declarations"
 run = ["rm -rf dist", "bun run tsc -p tsconfig.build.json"]
 
+[tasks.readme]
+description = "Every ts block in README.md is compiled by a test, line for line"
+run = "node scripts/check-readme.mjs"
+
+[tasks.surface]
+description = "dist/index.d.ts exports exactly scripts/exports.txt, and never names zod"
+# After `build`: this reads what ships. The zod check is a grep because the claim is about the
+# emitted text — a published declaration that names zod ties every consumer to zod's types.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+node scripts/check-exports.mjs
+if grep -q zod dist/index.d.ts; then
+  echo "dist/index.d.ts names zod; the published declarations must not" >&2
+  exit 1
+fi
+echo "dist/index.d.ts names no zod"
+'''
+
 [tasks.publint]
 description = "Lint the package as it would be published"
 run = "bun run publint run --strict"
@@ -49,9 +68,11 @@ run = [
   "mise run fmt-check",
   "mise run lint",
   "mise run types",
+  "mise run readme",
   "mise run fallow",
   "mise run test",
   "mise run build",
+  "mise run surface",
   "mise run publint",
   "mise run attw",
   "mise run audit",

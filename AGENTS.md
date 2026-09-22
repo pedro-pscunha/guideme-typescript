@@ -9,9 +9,11 @@ A TypeScript package that makes a TypeSafe Jev judgment usable as control flow: 
 npm as `@guideme/sdk` under `MIT OR Apache-2.0`, ESM only.
 
 The public surface is what `src/index.ts` re-exports, and nothing else: thirteen values and
-twenty-three types. `test/surface.test.ts` pins the values and `test/typing.test-d.ts` pins the
-types. Anything removed or renamed in either is a breaking change for people who do not work
-here, so it needs a major bump and a `CHANGELOG.md` entry.
+twenty-three types. `test/surface.test.ts` pins the values, `test/typing.test-d.ts` pins the
+types, and `scripts/check-exports.mjs` holds the built `dist/index.d.ts` to the list in
+`scripts/exports.txt`, which is what notices a name being added. Anything removed or renamed in
+either is a breaking change for people who do not work here, so it needs a major bump and a
+`CHANGELOG.md` entry.
 
 The live TypeSafe docs are the source of truth for the wire contract, over two pages:
 `https://docs.typesafe.ai/api.md` covers `POST /v1/systemone` and
@@ -224,7 +226,11 @@ TYPESAFE_API_KEY=… LIVE=1 bun run vitest run test/live.test.ts
 ## Commands
 
 ```
-mise run check      # the gate: fmt-check, lint, types, fallow, test, build, publint, attw, audit
+mise run check      # the gate: fmt-check, lint, types, readme, fallow, test, build, surface,
+                    #   publint, attw, audit
+mise run readme     # every ts block in README.md is compiled by a test, line for line
+mise run surface    # after build: dist/index.d.ts exports exactly scripts/exports.txt, no zod
+mise run example    # type-check and lint examples/otlp (needs its own bun install and dist/)
 mise run test       # vitest, including the typecheck file
 mise run lint       # eslint only
 mise run types      # tsc --noEmit over src and test

@@ -1,5 +1,5 @@
 {
-  "entry": ["src/index.ts", "test/**/*.test.ts", "test/**/*.test-d.ts"],
+  "entry": ["src/index.ts", "test/**/*.test.ts", "test/**/*.test-d.ts", "scripts/*.mjs"],
   "ignoreDependencies": [
     "typescript",
     "prettier",
