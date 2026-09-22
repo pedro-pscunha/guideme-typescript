@@ -98,6 +98,13 @@ Each module survives the test.
   (400 against 450 billed input tokens for the same content). The gain comes from the examples
   being present, not from the JSON structure. Do not re-litigate this here: the composition is
   a cross-SDK contract item and changing it changes every SDK at once.
+- **A noul takes examples through `criteria`.** Its yes and no are as easy to confuse as two
+  options, and guideme-rust measured the largest swing of the three kinds there: on "Our
+  nightly export job has been failing since Tuesday. We pull the numbers by hand for now."
+  asked as "Is this ticket urgent?", plain criteria answer 0.75 and criteria with examples
+  answer 0.25, which is the correct answer. That measurement is guideme-rust's, with its own
+  example set (`docs/design.md` there); it was not repeated here. The README links to this
+  bullet from its `.criteria` example.
 - **Newline separation, no terminal punctuation.** Examples frequently end in `?`, and a
   space-joined format then needs a trailing `.` that produces `Where is my refund?.`. `what` is
   used verbatim, which is what makes a rubric with no examples render to itself byte for byte —
@@ -159,6 +166,11 @@ Each module survives the test.
   after a timeout multiplies the wall time that number promises. Here it is
   `AbortSignal.timeout` per attempt, so total wall time is bounded by
   `(maxRetries + 1) × timeout` plus the backoffs, and nothing else.
+- **`timeout` is at most 2 147 483 647 ms (2^31 - 1).** That is the longest delay a timer
+  holds. Node clamps a larger one to 1 ms, so the deadline would fire at once and every call
+  would fail as a timeout. A larger value is a `config` error when the guide is built, as is a
+  value of 0 or less, which `AbortSignal.timeout` would refuse on the first attempt and report
+  as a transport failure.
 - **Every `zod` schema is module-private.** The schemas live in `src/api/wire.ts` and nothing
   outside that file imports them; `parseRequest`, `parseResponse` and `parseModels` are the
   only exports, and each returns a hand-written interface. No `z.infer` type is exported, so

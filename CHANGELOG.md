@@ -35,3 +35,10 @@ The first release. It ships the whole guideme 0.2.0 contract, as published by
   `ReturnType<..>` or `Parameters<..>`. A question type's answer parameter is structural, so a
   `.detail()` or a question of one key set never passes for another's, a plain noul never passes
   for a detailed one, and a question cannot be written as an object literal.
+
+### Documentation
+
+- The README is rewritten in plain English, with the headings and words of the Rust and Python
+  READMEs. The quick start now runs as written. The policy example sets a threshold that its
+  yes/no question uses. The README no longer says that `chooseAmong` takes a plain description:
+  it takes `option(…)` or `null`. The design notes that left the README are in `docs/design.md`.
