@@ -1,8 +1,9 @@
-import { test } from "vitest";
+import { expect, test } from "vitest";
 import fc from "fast-check";
 import { resolve, thresholds } from "../src/policy.js";
 import type { ChoiceOutcome, NoulOutcome, ScoreOutcome } from "../src/policy.js";
 import { compareByCodePoint } from "../src/scalars.js";
+import { option, render } from "../src/rubric.js";
 
 const unit = fc.double({ min: 0, max: 1, noNaN: true, noDefaultInfinity: true });
 const band = fc.tuple(unit, unit).map(([a, b]) => (a <= b ? ([a, b] as const) : ([b, a] as const)));
@@ -83,4 +84,12 @@ test("score: index is the argmax, ties to the lowest", () => {
       return out.index === ps.indexOf(best);
     }),
   );
+});
+
+test("a rubric with no parts renders to itself, byte for byte, for any string", () => {
+  fc.assert(fc.property(fc.string(), (what) => render(option(what)) === what));
+  // Including strings that are themselves blank, contain line breaks, or look like a clause.
+  for (const what of ["", "   ", "\n", "a\nb", "Not this option: x", "a; b", " "]) {
+    expect(render(option(what))).toBe(what);
+  }
 });

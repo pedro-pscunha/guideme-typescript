@@ -14,3 +14,4 @@ export {
   type Rank,
 } from "./scalars.js";
 export { type Policy, type Thresholds, type Verdict } from "./policy.js";
+export { fallback, level, option, type LevelRubric, type OptionRubric } from "./rubric.js";
