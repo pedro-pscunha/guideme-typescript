@@ -205,16 +205,17 @@ const argmax = (distribution: readonly Probability[]): number => {
   // guideme/src/policy.rs folds over the keys in ascending order and replaces the best
   // only on a STRICTLY greater probability, so a tie goes to the lowest index.
   let index = 0;
-  let best = distribution[0];
-  if (best === undefined) throw protocolError("score distribution is empty");
-  for (let i = 1; i < distribution.length; i += 1) {
-    const p = distribution[i];
+  let best: Probability | undefined;
+  // `entries()` rather than an index, so there is no element that can be absent and no
+  // `p !== undefined` arm that would silently skip one instead of reporting it.
+  for (const [i, p] of distribution.entries()) {
     // Strictly greater, so a tie goes to the lowest index, as guideme/src/policy.rs does.
-    if (p !== undefined && p > best) {
+    if (best === undefined || p > best) {
       best = p;
       index = i;
     }
   }
+  if (best === undefined) throw protocolError("score distribution is empty");
   return index;
 };
 

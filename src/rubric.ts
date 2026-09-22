@@ -112,8 +112,9 @@ export const asLevelRubric = (v: string | LevelRubric): LevelRubric =>
   typeof v === "string" ? level(v) : v;
 
 const checkClause = (items: readonly string[], kind: "example" | "counterexample"): void => {
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i] ?? "";
+  // `entries()` rather than an index: there is no `items[i]` that can be absent, so there is
+  // no fallback to write, and a `?? ""` here would turn a missing item into a legal blank one.
+  for (const [i, item] of items.entries()) {
     // Rules 2 and 3.
     if (isBlank(item)) throw configError(`an ${kind} must not be empty`);
     // Rules 11 and 12.
@@ -164,18 +165,21 @@ export const render = (r: AnyRubric): string => {
 /**
  * Rules 5, 6 and 7 — the ones no single rubric can see. An example asserts that an input
  * belongs here, so the same string under two of them asserts it belongs to each.
+ *
+ * Each rubric arrives paired with the label the error message names it by, rather than with a
+ * function from an index to a label. A pair cannot be indexed out of range, so no branch here
+ * has to invent a rubric or a label that is not there.
  */
 const checkShared = (
-  rubrics: readonly AnyRubric[],
+  labelled: readonly (readonly [string, AnyRubric])[],
   noun: "option" | "level",
-  label: (i: number) => string,
 ): void => {
-  for (let i = 0; i < rubrics.length; i += 1) {
-    for (const example of rubrics[i]?.examples ?? []) {
-      for (let j = 0; j < i; j += 1) {
-        if ((rubrics[j]?.examples ?? []).some((e) => e === example)) {
+  for (const [i, [label, here]] of labelled.entries()) {
+    for (const example of here.examples) {
+      for (const [earlierLabel, earlier] of labelled.slice(0, i)) {
+        if (earlier.examples.some((e) => e === example)) {
           throw configError(
-            `${JSON.stringify(example)} is an example of both ${label(j)} and ${label(i)}; an input belongs to one ${noun}`,
+            `${JSON.stringify(example)} is an example of both ${earlierLabel} and ${label}; an input belongs to one ${noun}`,
           );
         }
       }
@@ -191,7 +195,13 @@ const checkShared = (
  * level may not. Rust's `render_pair` takes the option-shaped rubric for the same reason.
  */
 export const renderPair = (yes: OptionRubric, no: OptionRubric): readonly [string, string] => {
-  checkShared([yes, no], "option", (i) => (i === 0 ? "yes" : "no"));
+  checkShared(
+    [
+      ["yes", yes],
+      ["no", no],
+    ],
+    "option",
+  );
   return [render(yes), render(no)];
 };
 
@@ -206,9 +216,8 @@ export const renderOptions = (
     (entry): entry is readonly [string, OptionRubric] => entry[1] !== null,
   );
   checkShared(
-    described.map(([, r]) => r),
+    described.map(([k, r]) => [JSON.stringify(k), r] as const),
     "option",
-    (i) => JSON.stringify(described[i]?.[0] ?? ""),
   );
   return options.map(([k, r]) => [k, r === null ? null : render(r)] as const);
 };
@@ -217,8 +226,8 @@ export const renderOptions = (
 export const renderLevels = (levels: readonly LevelRubric[]): readonly string[] => {
   // Rule 10, checked FIRST across every level, exactly as `render_levels` does in Rust.
   // `levels()` makes this a type error; this is the same rule where there is no declaration.
-  for (let i = 0; i < levels.length; i += 1) {
-    const maybeOption: unknown = levels[i];
+  for (const [i, declared] of levels.entries()) {
+    const maybeOption: unknown = declared;
     if (
       typeof maybeOption === "object" &&
       maybeOption !== null &&
@@ -234,6 +243,9 @@ export const renderLevels = (levels: readonly LevelRubric[]): readonly string[] 
       );
     }
   }
-  checkShared(levels, "level", (i) => `level ${String(i)}`);
+  checkShared(
+    levels.map((l, i) => [`level ${String(i)}`, l] as const),
+    "level",
+  );
   return levels.map((l) => render(l));
 };

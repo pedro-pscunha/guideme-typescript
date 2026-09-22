@@ -61,7 +61,12 @@ export default defineConfig(
       // The only relaxation tests get. `tsdoc/syntax` checks the grammar of doc comments and
       // a test file has no published API to document; every other rule stays on, because the
       // Invariants say no `!` and no unsafe member access ANYWHERE, not only in src. A test
-      // that cannot narrow a value writes the guard, exactly as src does.
+      // that cannot narrow a value writes the guard, exactly as src does — `noulOutcome`,
+      // `choiceOutcome` and `scoreOutcome` in test/policy-laws.test.ts and `portOf` and
+      // `questionsOf` in test/ are what that looks like. The `as` expressions that remain in
+      // test/ are neither narrowing nor assertion: two declare the shape of an imported JSON
+      // vector file, and one builds a value the type system forbids, through `unknown`, to
+      // hand a runtime constructor the input only a JavaScript caller could reach it with.
       "tsdoc/syntax": "off",
     },
   },

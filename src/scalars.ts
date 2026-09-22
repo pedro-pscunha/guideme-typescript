@@ -55,14 +55,23 @@ export const model = (id: string): Model => {
   return id as Model;
 };
 
-/** Brand a runtime option key. */
+/**
+ * Brand a runtime option key. **No check is performed here, and none is possible:** any string
+ * is a legal option key. The invariant that makes a `Key` meaningful — that it names an option
+ * in the rubric — is established by the only caller, `ChoiceImpl`'s ranked reader in
+ * `src/question.ts`, which refuses a key the rubric does not carry before this is reached.
+ */
 export const key = (k: string): Key =>
-  // eslint-disable-next-line no-restricted-syntax -- every string is a legal key; the rubric rules check the set, not the item
+  // eslint-disable-next-line no-restricted-syntax -- no check here by design; `ChoiceImpl`'s ranked reader proved the key is in the rubric before calling this
   k as Key;
 
-/** Brand a runtime level index. */
+/**
+ * Brand a runtime level index. **No check is performed here**: the invariant is that the index
+ * addresses a declared level, which is established by the only caller, `ScoreImpl`'s scored
+ * reader in `src/question.ts`, whose count check and level lookup both run first.
+ */
 export const rank = (i: number): Rank =>
-  // eslint-disable-next-line no-restricted-syntax -- the index comes from the position in a level list, which is what makes it a rank
+  // eslint-disable-next-line no-restricted-syntax -- no check here by design; `ScoreImpl`'s scored reader proved the index addresses a declared level before calling this
   i as Rank;
 
 /** `jev-latest`: the most recent stable release, and this package's default. */
@@ -141,10 +150,15 @@ export const compareByCodePoint = (a: string, b: string): number => {
   const left = [...a];
   // eslint-disable-next-line @typescript-eslint/no-misused-spread -- code points are the unit Rust's `String: Ord` compares
   const right = [...b];
-  const shared = Math.min(left.length, right.length);
-  for (let i = 0; i < shared; i += 1) {
-    const x = left[i]?.codePointAt(0) ?? 0;
-    const y = right[i]?.codePointAt(0) ?? 0;
+  for (const [i, x] of left.entries()) {
+    const y = right[i];
+    // `b` ran out first, so `a` is the longer of two equal prefixes.
+    if (y === undefined) break;
+    // `x` and `y` are whole code points, so their widths decide the comparison on their own:
+    // a two-unit string is a surrogate pair and therefore a scalar value at or above U+10000,
+    // while a one-unit string is at or below U+FFFF. At equal width, UTF-16 order and
+    // code-point order agree. No `?? 0`: there is no index here that can be absent.
+    if (x.length !== y.length) return x.length < y.length ? -1 : 1;
     if (x !== y) return x < y ? -1 : 1;
   }
   return left.length - right.length;
