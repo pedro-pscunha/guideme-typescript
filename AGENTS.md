@@ -155,6 +155,9 @@ Bump the version, take the new `spec/`, and say so in `CHANGELOG.md`.
 Few tests, high grade. The ceiling is **40** vitest cases and the table below spends exactly 40. A `test.each` table counts as **one**. `test/typing.test-d.ts` is the typecheck file and is
 outside the 40; row 40 is `#[ignore]`-equivalent and never runs in the gate.
 
+Split unrelated behaviours into named rows of a `test.each` table instead of bundling them into
+one `test()` body: the table still counts once, and a failure names the scenario that broke.
+
 A new case must be one of:
 
 - a property test (`fast-check`) over a law of `resolve` or of the renderer;
@@ -193,9 +196,9 @@ usually by replacing a row rather than adding one.
 | 19  | wire           | timeout                                                   | SC9: **not** retried, one attempt, `"transport"`. The `TimeoutError` case.                                                                                                                                                                                                                                                                    |
 | 20  | wire           | body closes mid-stream                                    | SC9: not retried — the case a `TypeError` check alone would get wrong.                                                                                                                                                                                                                                                                        |
 | 21  | wire           | malformed body and an option outside the rubric           | SC9: both `"protocol"`.                                                                                                                                                                                                                                                                                                                       |
-| 22  | wire           | unsure with no fallback, and an empty batch               | SC9: `"unsure"` naming the question; `"config"`.                                                                                                                                                                                                                                                                                              |
+| 22  | wire           | `test.each`: config and unsure, 10 rows                   | SC9: `"unsure"` naming the question and the `.or(..)` that catches it; `"config"` for an empty batch, an out-of-range `maxRetries`, `backoff` or `timeout`, a hand-built descriptor and unserialisable state, with the legal neighbours of each.                                                                                              |
 | 23  | wire           | the receipt                                               | SC10: `askWithReceipt` returns the response's `model` and `usage` exactly.                                                                                                                                                                                                                                                                    |
-| 24  | wire           | `ask` returns the bare answer for every shape             | SC10: question, tuple, array, object.                                                                                                                                                                                                                                                                                                         |
+| 24  | wire           | `test.each`: shapes and `models()`, 4 rows                | SC10: tuple with a nested object and its ids, a bare question, the `models()` mapping, integer-like key order.                                                                                                                                                                                                                                |
 | 25  | wire           | injected `fetch` is the only transport                    | SC11: a spy proves the global `fetch` is never called; the README recipe is the input.                                                                                                                                                                                                                                                        |
 | 26  | tracing        | the `guideme.ask` span's attribute set                    | SC12: exactly the documented names, including `gen_ai.response.model` and `gen_ai.usage.*`.                                                                                                                                                                                                                                                   |
 | 27  | tracing        | one HTTP child span per attempt                           | SC12: `http.request.resend_count` absent on the first, present from the second.                                                                                                                                                                                                                                                               |
@@ -213,10 +216,12 @@ usually by replacing a row rather than adding one.
 | 39  | surface        | `Object.keys(sdk)`                                        | The `__all__` test: the thirteen runtime exports, sorted, and nothing else.                                                                                                                                                                                                                                                                   |
 | 40  | live           | `test.each` of the two live tests                         | SC18: skipped unless `TYPESAFE_API_KEY` **and** `LIVE=1`.                                                                                                                                                                                                                                                                                     |
 
-The table is the plan's, copied across, with one change: case 5's refusal table is **21** rows
+The table is the plan's, copied across, with two changes. Case 5's refusal table is **21** rows
 rather than 20, and its reason names the fourteenth. A `fallback()` value handed to
 `chooseAmong` is refused, which the plan did not anticipate and `docs/contract.md` §8 states.
-The number of **cases** is unchanged, because a `test.each` table counts as one.
+And cases 22 and 24, which each bundled several behaviours into one body, are tables of named
+scenarios, so a failure says which one broke. The number of **cases** is unchanged, because a
+`test.each` table counts as one.
 
 The live tests in `test/live.test.ts` hit the real API and are skipped unless both variables
 are set:
