@@ -1,0 +1,165 @@
+[tools]
+"aqua:gitleaks/gitleaks" = "8.30.1"
+node = "22.23.2"
+bun = "1.4.2"
+
+[tasks.fmt]
+description = "Format everything"
+run = "bun run prettier --write ."
+
+[tasks.fmt-check]
+description = "Fail if anything is unformatted"
+run = "bun run prettier --check ."
+
+[tasks.lint]
+description = "ESLint, type-aware, warnings are errors"
+# `--max-warnings 0` is what makes the description true: ESLint exits 0 on warnings otherwise.
+run = "bun run eslint --max-warnings 0 ."
+
+[tasks.types]
+description = "tsc --noEmit over src and test"
+run = "bun run tsc --noEmit -p tsconfig.json"
+
+[tasks.fallow]
+description = "Dead code, duplication and health; zero findings, no baseline"
+run = "bun run fallow --fail-on-issues"
+
+[tasks.test]
+description = "vitest, including the typecheck file"
+run = "bun run vitest run --typecheck"
+
+[tasks.test-bun]
+description = "The suite under the Bun runtime, which is what the `bun` CI job runs"
+# `--bun` is what makes it Bun: vitest's bin has a node shebang and `bun run` honours it, so
+# without the flag this would run the suite on Node a second time.
+run = "bun --bun run vitest run"
+
+[tasks.secrets]
+description = "gitleaks over the whole history, which is what the `secrets` CI job runs"
+# Exit 2 is a leak; exit 1 is gitleaks failing to run. Both fail the task.
+run = "gitleaks git --no-banner --redact --exit-code 2"
+
+[tasks.build]
+description = "Emit dist/ with declarations"
+run = ["rm -rf dist", "bun run tsc -p tsconfig.build.json"]
+
+[tasks.readme]
+description = "Every ts block in README.md is compiled by a test, line for line"
+run = "node scripts/check-readme.mjs"
+
+[tasks.surface]
+description = "dist/index.d.ts exports exactly scripts/exports.txt, and never names zod"
+# After `build`: this reads what ships. The zod check is a grep because the claim is about the
+# emitted text — a published declaration that names zod ties every consumer to zod's types.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+node scripts/check-exports.mjs
+if grep -q zod dist/index.d.ts; then
+  echo "dist/index.d.ts names zod; the published declarations must not" >&2
+  exit 1
+fi
+echo "dist/index.d.ts names no zod"
+'''
+
+[tasks.min-node]
+description = "Build, then import the built package on whatever node runs this"
+# The `min-node` CI job runs this on node 22.0.0, the floor `engines` promises. The floor it
+# checks against is read from package.json, so the two cannot drift: a change to `engines`
+# that this task does not also accept fails here.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+mise run build
+claimed="$(node -p 'require("./package.json").engines.node')"
+echo "package.json claims engines.node = ${claimed}; this runs $(node -v)"
+if [ "${claimed}" != ">=22" ]; then
+  echo "engines.node is ${claimed}; the min-node job pins 22.0.0 and must move with it" >&2
+  exit 1
+fi
+node --input-type=module -e "const m = await import('./dist/index.js'); if (typeof m.Guide !== 'function') { console.error('dist/index.js exports no Guide'); process.exit(1); } console.log('imported on', process.version);"
+'''
+
+[tasks.publint]
+description = "Lint the package as it would be published"
+run = "bun run publint run --strict"
+
+[tasks.attw]
+description = "Are the types wrong, on the ESM-only profile"
+run = "bun run attw --pack . --profile esm-only"
+
+[tasks.audit]
+description = "Advisory scan of the lock file"
+run = "bun audit"
+
+[tasks.check]
+description = "The full gate, cheapest first"
+run = [
+  "mise run fmt-check",
+  "mise run lint",
+  "mise run types",
+  "mise run readme",
+  "mise run fallow",
+  "mise run test",
+  "mise run build",
+  "mise run surface",
+  "mise run publint",
+  "mise run attw",
+  "mise run audit",
+]
+
+[tasks.example]
+description = "Type-check and lint examples/otlp, which the root gate does not reach"
+# The root tsconfig.json includes only src, test and vitest.config.ts, and eslint.config.js
+# ignores examples/**, so `mise run check` only ever formats the example. This is the task that
+# checks it, and the `example` CI job runs this task rather than its own commands, so the two
+# cannot drift. It is deliberately NOT part of `check`: it needs the example's own
+# `bun install` and a built dist/ to link against, neither of which the gate produces.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+(cd examples/otlp && bun run tsc --noEmit -p tsconfig.json)
+bun run eslint --config examples/otlp/eslint.config.js "examples/otlp/**/*.ts"
+'''
+
+[tasks.spec-check]
+description = "Fail if the vendored spec/ has drifted from guideme-rust main"
+# `set -o pipefail` and `set -euo` are bash builtins; mise runs an inline script with `sh -c`,
+# which is dash on Linux and rejects them. Every multi-line task here names the shell it is
+# written for rather than relying on what /bin/sh happens to be. This is the guideme-python
+# repository's form, and the reason is quoted from its mise.toml.
+shell = "bash -c"
+# spec/SOURCE is provenance — the guideme-rust commit this copy was taken from — and has no
+# counterpart upstream, so it is the one path excluded from the content diff. Everything else
+# must match main exactly: the contract lives there, and a local edit to it is the failure
+# this task exists to catch.
+run = '''
+set -euo pipefail
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+git clone --quiet --depth 1 https://github.com/pedro-pscunha/guideme-rust "$tmp/rust"
+echo "vendored from $(cat spec/SOURCE); guideme-rust main is $(git -C "$tmp/rust" rev-parse HEAD)"
+diff -ru -x SOURCE "$tmp/rust/spec" spec
+echo "spec/ matches guideme-rust main"
+'''
+
+[tasks.hooks]
+description = "Activate the tracked git hooks in .githooks"
+shell = "bash -c"
+run = '''
+for hook in .githooks/pre-commit .githooks/pre-push; do
+  if [ ! -x "$hook" ]; then
+    echo "$hook is not executable — git would skip it; nothing was changed" >&2
+    exit 1
+  fi
+done
+prior="$(git config --local --get core.hooksPath || true)"
+git config --local core.hooksPath .githooks
+active="$(git config --get core.hooksPath)"
+if [ "$active" != ".githooks" ]; then
+  echo "core.hooksPath resolves to '$active', not .githooks — the hooks would not fire" >&2
+  if [ -n "$prior" ]; then git config --local core.hooksPath "$prior"; else git config --local --unset core.hooksPath; fi
+  exit 1
+fi
+echo "hooks active: .githooks (pre-commit, pre-push)"
+'''

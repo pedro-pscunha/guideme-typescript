@@ -1,0 +1,15 @@
+{
+  "entry": ["src/index.ts", "test/**/*.test.ts", "test/**/*.test-d.ts", "scripts/*.mjs"],
+  "ignoreDependencies": [
+    "typescript",
+    "prettier",
+    "eslint",
+    "eslint-plugin-import-x",
+    "eslint-plugin-tsdoc",
+    "typescript-eslint",
+    "fallow",
+    "publint",
+    "@arethetypeswrong/cli",
+    "@types/node"
+  ]
+}

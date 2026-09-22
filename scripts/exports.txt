@@ -1,0 +1,40 @@
+# Every name the published entry point exports, as `dist/index.d.ts` spells it: a value by its
+# name, a type-only export with `type ` in front. `scripts/check-exports.mjs` compares the two.
+# Adding, removing or renaming a line is a change to the public API.
+
+Guide
+type GuideOptions
+choice
+choose
+chooseAmong
+levels
+noul
+score
+scoreLevels
+type ChoiceQuestion
+type Level
+type NoulQuestion
+type Option
+type Question
+type Ranked
+type ScoreQuestion
+type Scored
+fallback
+level
+option
+type LevelRubric
+type OptionRubric
+type Policy
+type Thresholds
+type Verdict
+type ModelInfo
+type Receipt
+type Usage
+ApiKey
+type Confidence
+type Key
+type Model
+type Probability
+type Rank
+GuidemeError
+type ErrorKind

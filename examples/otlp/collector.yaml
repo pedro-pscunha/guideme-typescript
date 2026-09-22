@@ -1,0 +1,31 @@
+# An OpenTelemetry Collector that receives what the example exports and prints it.
+#
+#   otelcol --config collector.yaml
+#
+# `debug` with `detailed` verbosity writes every span, every event and every attribute to the
+# collector's stdout, which is what makes this useful as an example: you can read the shape the
+# SDK promises — one `guideme.ask` span, one `POST /v1/systemone` span per attempt beneath it,
+# one `guideme.answer` event per question — instead of taking the documentation's word for it.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
