@@ -57,6 +57,20 @@ run = [
   "mise run audit",
 ]
 
+[tasks.example]
+description = "Type-check and lint examples/otlp, which the root gate does not reach"
+# The root tsconfig.json includes only src, test and vitest.config.ts, and eslint.config.js
+# ignores examples/**, so `mise run check` only ever formats the example. This is the task that
+# checks it, and the `example` CI job runs this task rather than its own commands, so the two
+# cannot drift. It is deliberately NOT part of `check`: it needs the example's own
+# `bun install` and a built dist/ to link against, neither of which the gate produces.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+(cd examples/otlp && bun run tsc --noEmit -p tsconfig.json)
+bun run eslint --config examples/otlp/eslint.config.js "examples/otlp/**/*.ts"
+'''
+
 [tasks.spec-check]
 description = "Fail if the vendored spec/ has drifted from guideme-rust main"
 # `set -o pipefail` and `set -euo` are bash builtins; mise runs an inline script with `sh -c`,

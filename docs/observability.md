@@ -211,8 +211,9 @@ of the ask span. `@opentelemetry/sdk-node`'s `NodeSDK`, or
 
 ## OTLP
 
-`examples/otlp` is a runnable version of it: `NodeSDK` with an OTLP exporter, against the live
-API, with a collector config that prints what it receives. It is its own package with its own
+`examples/otlp` is a runnable version of it: `NodeTracerProvider.register()` for the context
+manager, OTLP/HTTP exporters for traces and logs, the live API, and a collector config that
+prints what it receives. It is its own package with its own
 lock file, so its dependencies stay out of this one's tree.
 
 ### Configuration by environment
@@ -238,9 +239,10 @@ different backend.
   every span it receives.
 
   ```sh
-  docker run --rm -d --name guideme-otel -p 4317:4317 -p 4318:4318 \
+  docker run --rm -d --name guideme-otel -p 4318:4318 \
     -v "$PWD/examples/otlp:/conf:ro" \
-    otel/opentelemetry-collector-contrib:latest --config=/conf/collector.yaml
+    otel/opentelemetry-collector-contrib:latest --config=/conf/collector.yaml \
+    --set=receivers.otlp.protocols.http.endpoint=0.0.0.0:4318
   docker logs -f guideme-otel
   ```
 
