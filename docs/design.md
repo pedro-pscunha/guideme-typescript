@@ -149,6 +149,12 @@ Each module survives the test.
   so a rule written on it would be a rule that works on one runtime. `test/wire.test.ts` has a
   case for the truncated body precisely because a class check alone would get it wrong.
 
+  A connect timeout that the runtime's own `fetch` raises (undici's, about 10 s, in Node) also
+  rejects the `fetch` call with a `TypeError`, so this rule resends it as a connection failure.
+  That is where this SDK differs from the others: Python never resends a connect timeout, and
+  Rust resends one only when the caller's own `reqwest` client sets a `connect_timeout`. The
+  README links here for that difference.
+
 - **Redirects are not followed, and the shape of that differs in a browser.** A redirect
   carries the `Authorization` header and whether it survives a cross-origin hop is the
   runtime's rule, not this package's; `docs/contract.md` §6 states the policy. Every request

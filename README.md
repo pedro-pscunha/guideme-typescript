@@ -1,7 +1,7 @@
 # guideme (TypeScript)
 
 [![npm](https://img.shields.io/npm/v/@guideme/sdk.svg)](https://www.npmjs.com/package/@guideme/sdk)
-[![license](https://img.shields.io/npm/l/@guideme/sdk.svg)](#license)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
 guideme sends a question and your state to [TypeSafe Jev](https://docs.typesafe.ai), the
 TypeSafe model that gives judgments. It gives back the answer as a normal TypeScript value: a
@@ -18,20 +18,20 @@ npm install @guideme/sdk @opentelemetry/api
 `@guideme/sdk` is not on npm yet. This command works after the first release.
 
 guideme needs Node 22 or newer, or another runtime with `fetch`. The package is ESM only and
-includes its own types. Its one runtime dependency is `zod`.
+includes its own types. Its one runtime dependency is `zod`. Neither `zod` nor
+`@opentelemetry/api` is part of the public API of guideme.
 
 `@opentelemetry/api` is a peer dependency, so name it in the command yourself. npm installs a
-peer, but it does not add the peer to your `package.json`, and your own tracing setup imports
-it. If your application already has a version older than `1.9`, npm refuses the install
-(`ERESOLVE`). bun and pnpm show a warning, then use your copy. Neither `zod` nor
-`@opentelemetry/api` is part of the public API of guideme.
+peer, but it does not add the peer to your `package.json`. Your own tracing setup imports
+`@opentelemetry/api` too. If your application already has a version older than `1.9`, npm
+refuses the install (`ERESOLVE`). bun and pnpm show a warning, then use your copy.
 
 Set the API key in the `TYPESAFE_API_KEY` environment variable. To give the key in code, use
 `new Guide({ apiKey: new ApiKey("…") })`.
 
 ## Quick start
 
-This example asks three questions about one support ticket.
+This program asks three questions about one support ticket.
 
 ```ts
 import { choice, choose, fallback, levels, noul, option, score, Guide } from "@guideme/sdk";
@@ -106,14 +106,14 @@ await triage("I was charged twice this month");
   confidence is less than `minConfidence`. The default `minConfidence` is 0, so a choice is
   never unsure and the fallback is never used. That is why this choice sets 0.6.
 
-When your program starts, build one guide, as this example does. Then share it in the whole
+When your program starts, build one guide, as this program does. Then share it in the whole
 program. The Configuration section tells why.
 
 ## Questions
 
 There are three kinds of question. A yes/no question gives a `boolean`. A choice gives one of
 your options, and a score gives one level of your ordered scale. The _instructions_ are the text
-of the question: the first argument of each constructor below. Add `.detail()` to a question to
+of the question: the `"…"` argument of each constructor below. Add `.detail()` to a question to
 get the detailed answer in place of the plain answer.
 
 | Constructor                            | Asks                                            | Plain answer                          | Detailed answer (`.detail()`)                                         |
@@ -127,23 +127,27 @@ get the detailed answer in place of the plain answer.
 The `value` of a score is the probability-weighted level number. The lowest level is 0, and the
 value can land between two levels.
 
-Level order is declaration order, from low to high. Use the methods of the descriptor to compare
-levels: `atLeast`, `compare`, `index` and `rank`. **Never compare level keys with `>` or `>=`.**
+Level order is declaration order, from low to high. The _descriptor_ is the object that
+`choice(…)` or `levels(…)` returns (here `Frustration`). Use its methods to compare levels:
+`atLeast`, `compare`, `index` and `rank`. **Never compare level keys with `>` or `>=`.**
 These operators compare the text of the keys in alphabetical order, not the levels. The keys of
 `Frustration` are in alphabetical order by chance, so `>` gives the correct answer there. If you
-rename one key, it does not.
+rename one key, `>` can give the wrong answer.
 
 A yes/no question can carry `.criteria(yes, no)`: what yes means and what no means. The
 instructions are a string or a plain object. With an object, a question can name fields of a
-structured state, as the TypeSafe docs describe.
+structured state, as the
+[TypeSafe docs](https://docs.typesafe.ai/concepts/how-to-build-with-system-one#use-structure-in-the-questions)
+describe.
 
 The state is any value that `JSON.stringify` accepts: a string, a number, an object, or your own
-class with a `toJSON` method. guideme examines the value after `toJSON` runs. A `NaN`, an
-`Infinity`, a bigint or a cycle in it is a `config` error, not a silent `null`. The same object
-under two fields is not a cycle.
+class with a `toJSON` method. guideme examines the value after `toJSON` runs.
+`JSON.stringify` writes a `NaN` or an `Infinity` as `null`. guideme refuses them with a `config`
+error instead. A bigint or a cycle is a `config` error too. The same object under two fields is
+not a cycle.
 
 `guide.models()` returns the models that your account can use, each with `name`, `description`
-and `releaseDate`. It is one `GET /v1/models` request, with the same retries as an ask.
+and `releaseDate`. It is one `GET /v1/models` request, with the same retries as `ask`.
 
 You can write every type that a signature needs by its name. You never have to use
 `ReturnType<..>`, except for the argument type of `choice` and `levels`:
@@ -155,6 +159,8 @@ You can write every type that a signature needs by its name. You never have to u
   way.
 - The constructors take `Instructions`. `option`, `fallback` and `level` take `OptionParts` and
   `LevelParts`.
+- `askWithReceipt` returns a `Receipt<T>` with a `Usage`, and `models()` returns
+  `readonly ModelInfo[]`.
 
 You cannot write a question, a descriptor or a rubric as an object literal. A question comes
 only from `noul`, `choose`, `score`, `chooseAmong` or `scoreLevels`. A descriptor comes only
@@ -186,13 +192,14 @@ A threshold on the question wins over the guide, and the guide wins over the def
 guideme resolves an unsure answer with the _unsure ladder_. The first step that applies wins:
 
 1. The value from `.or(value)` on the question.
-2. The fallback: the option that `choice(…)` marks with `fallback(…)`. A score has no fallback.
-   A `chooseAmong` choice has none either, and it refuses a `fallback(…)` option with a `config`
-   error. For these two, use `.or(..)`.
+2. The fallback: the option that you declare with `fallback(…)` in `choice(…)`. A score has no
+   fallback. A `chooseAmong` choice has none either, and it refuses a `fallback(…)` option with a
+   `config` error. For these two, use `.or(..)`.
 3. An `unsure` error, which names the question and the threshold that the answer did not reach.
 
 `.detail()` skips the ladder and gives you the detailed answer to decide yourself. It never
-fails on an unsure answer. A detailed question has no `.or`, so `noul("…").detail().or(x)` does
+fails on an unsure answer. It also removes an `.or(..)` that you set before it. A detailed
+question has no `.or`, so `noul("…").detail().or(x)` does
 not compile. A policy is a plain object:
 
 ```ts
@@ -275,7 +282,7 @@ question change a wrong answer into a correct one.
 
 The runtime constructors take rubrics too. `chooseAmong` takes an `option(…)` for each key, or
 `null` for an option with no rubric. `scoreLevels` takes a plain description or a `level(…)` for
-each level.
+each level, as in `scoreLevels("How severe?", ["Cosmetic", "Degraded", "Blocking"])`.
 
 ```ts
 import { chooseAmong, option, type Guide, type Key } from "@guideme/sdk";
@@ -298,26 +305,25 @@ async function desk(guide: Guide, ticket: string): Promise<Key> {
 
 A rubric obeys these rules:
 
-- Leave a clause out to say that there are none. A clause written with nothing in it, such as
-  `examples: []`, is refused.
+- Leave a clause out to say that there are none. guideme refuses a clause with nothing in it,
+  such as `examples: []`.
 - An example or a counterexample cannot be blank, contain a line break, or appear twice in one
   clause.
 - An input cannot be an example of two options, of two levels, or of the yes and the no.
 - An input cannot be an example and a counterexample of one option.
 - Examples and counterexamples need a rubric that is not blank. A blank rubric alone is legal.
-- A level has no counterexamples.
 - An input can be an example of one option and a counterexample of another. This separates two
   options that are easy to confuse.
 
-The compiler refuses a counterexample on a level. Each other broken rule is a `config` error
-when the constructor runs, before any request. The constructors are `option`, `level`,
-`choice`, `levels`, `.criteria`, `chooseAmong` and `scoreLevels`.
+The compiler refuses a counterexample on a level. Each other broken rule is a `config` error,
+before any request. `option(…)` and `level(…)` refuse only a clause with nothing in it.
+`choice`, `levels`, `.criteria`, `chooseAmong` and `scoreLevels` apply the other rules.
 
 ## Several questions in one request
 
 An array of questions is also a question. So is a plain object of questions, and they can nest.
-The answer has the same shape. It comes from one request, in one [span](#observability). Each
-question keeps its own policy.
+An array or an object of questions is a _batch_. Its _shape_ is how you arrange the questions,
+and the answer has the same shape. It comes from one request, in one [span](#observability). Each question keeps its own policy.
 
 ```ts
 const answers = await guide.ask(
@@ -333,9 +339,9 @@ const answers = await guide.ask(
 
 The type of `answers` is
 `readonly [boolean, Department, Scored<Frustration>, { readonly spam: boolean; readonly vip: boolean }]`.
-`test/typing.test-d.ts` makes sure of this type. The `as const` makes the array a tuple. Without
-it, the answer is an array such as `readonly boolean[]`, which is the correct type for a list
-that you build at run time.
+The `as const` makes the array a tuple. Without it, the answer is an array, for example
+`readonly boolean[]` for `[noul(…), noul(…)]`. That is the correct type for a list that you
+build at run time.
 
 The question ids are `q0`, `q1` and so on, in the order that guideme reads the shape. Array
 items keep their order. Object keys go in `Object.keys` order: integer-like keys first, in
@@ -349,7 +355,7 @@ A batch is atomic. If guideme cannot resolve one answer, the whole call fails. P
 
 `askWithReceipt` sends the same request and records the same span as `ask`. It returns a
 `Receipt`: the answer, the versioned model that answered, and the token usage. If you asked for
-an alias, the model is still a version such as `jev-1.13.0`. Input tokens are the billed ones.
+an alias such as `jev-latest`, the model is still a version such as `jev-1.13.0`.
 
 ```ts
 const receipt = await guide.askWithReceipt(noul("Urgent?"), ticket);
@@ -363,33 +369,49 @@ receipt.usage; // { inputTokens: 307, outputTokens: 20 } — input tokens are th
 ## Errors
 
 Every failure is a `GuidemeError`. Its `kind` is the _error kind_: the same string in every
-guideme SDK, and the `error.type` of the failed span. A `switch` over `kind` is checked for
-exhaustiveness. The constructor is public, with a third argument of type `GuidemeErrorOptions`,
-so a test double can throw the same class.
+guideme SDK, and the `error.type` of the failed span. With `assertNever` in the `default` arm,
+the compiler makes sure that a `switch` over `kind` handles every kind. The constructor is
+public, with a third argument of type `GuidemeErrorOptions`, so a test double can throw the same
+class.
 
-| `kind`              | When                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`              | HTTP 401: the API key is missing or not valid                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `invalid`           | HTTP 422. `.body` holds the response body. If guideme cannot read the body, `.body` is unset and `.cause` holds the read failure.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `rate_limited`      | HTTP 429 after the last retry, or a `retry-after` of more than 30 s. `.retryAfterMs` holds the `retry-after`, if the API sent one.                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `overloaded`        | HTTP 529, on the same terms as `rate_limited`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `transport`         | a connection, TLS or timeout failure, or a failure to read the body of a 200                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `unexpected_status` | a status that the contract does not define, a 3xx included. `.status` and `.body` hold it.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `protocol`          | the response breaks the contract: a body that does not decode, the wrong answer kind, an option or level not in the rubric, a probability outside 0..1, a blank model name, a missing answer                                                                                                                                                                                                                                                                                                                                                |
-| `unsure`            | the answer is unsure and nothing on the unsure ladder caught it. `.question` holds the question id.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `config`            | a mistake in your code, found before anything is sent: bad thresholds, no API key or a blank one, a blank model name, an empty batch, a shape that is not a question, an array or an object, a state that does not convert to JSON, a rubric that breaks a rule, two fallbacks, a fallback in `chooseAmong`, a wrong number of options (1 to 255) or levels (2 to 10), a question or descriptor not built by its constructor, a base URL that does not parse or that holds credentials, a `maxRetries`, `backoff` or `timeout` out of range |
+| `kind`              | When                                                                                                                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`              | HTTP 401: the API key is missing or not valid                                                                                                                                                             |
+| `invalid`           | HTTP 422. `.body` holds the response body. If guideme cannot read the body, `.body` is unset and `.cause` holds the read failure.                                                                         |
+| `rate_limited`      | HTTP 429 after the last retry, or a `retry-after` of more than 30 s. `.retryAfterMs` holds the `retry-after`, if the API sent one.                                                                        |
+| `overloaded`        | HTTP 529, on the same terms as `rate_limited`                                                                                                                                                             |
+| `transport`         | a connection, TLS or timeout failure, or a failure to read the body of a 200                                                                                                                              |
+| `unexpected_status` | a status that the contract does not define, a 3xx included. `.status` and `.body` hold it.                                                                                                                |
+| `protocol`          | the response breaks the contract: a body that does not decode, the wrong answer kind, an option or level not in the rubric, a probability outside 0..1, a blank model name from the API, a missing answer |
+| `unsure`            | the answer is unsure and nothing on the unsure ladder caught it. `.question` holds the question id.                                                                                                       |
+| `config`            | a mistake in your code, found before anything is sent: see the list below                                                                                                                                 |
+
+A `config` error comes from one of these:
+
+- thresholds outside 0..1, or a `noBelow` that is more than `yesAbove`
+- no API key, or a blank one
+- a blank `GUIDEME_MODEL`
+- a base URL that does not parse, has no host or port, or holds credentials
+- a `maxRetries`, `backoff` or `timeout` out of range
+- an empty batch, or a shape that is not a question, an array or an object
+- a question not built by its constructor
+- a state that does not convert to JSON
+- a rubric that breaks a rule, two fallbacks, or a fallback in `chooseAmong`
+- a wrong number of options (1 to 255) or levels (2 to 10)
 
 ## Retries and timeouts
 
 guideme retries HTTP 429, HTTP 529, and a request that did not reach a server. A refused or reset
 connection and a failed TLS handshake are failures of this kind. So is a connect timeout that the
-`fetch` of the runtime raises itself (in Node, the undici timeout of about 10 s). It fails the
-same way as a refused connection. `GET /v1/models` gets the same retries as
-`POST /v1/systemone`. So a 429 on a `models()` call at startup does not stop your program.
+`fetch` of the runtime raises itself (in Node, the undici timeout of about 10 s). The runtime
+rejects it with a `TypeError`, as it does a refused connection. `GET /v1/models` gets the same
+retries as `POST /v1/systemone`. So a 429 on a `models()` call at startup does not stop your
+program.
 
-guideme does not retry its own `timeout`, in any phase, or a failure to read the body. `timeout`
-is one deadline for each attempt, so a retry after it multiplies the wall time that the setting
-promises. The longest call takes about `(maxRetries + 1) × timeout`, plus the waits.
+guideme does not retry its own `timeout`, in any phase, or a failure to read the body. The
+`timeout` setting (see [Configuration](#configuration)) is one deadline for each attempt. A retry
+after it multiplies the wall time that the setting promises. The longest call takes about
+`(maxRetries + 1) × timeout`, plus the waits.
 
 The wait before a retry is `backoff × 2^attempt`, with a maximum of 30 s, plus up to 250 ms of
 jitter. If the API sends a `retry-after` in whole seconds, guideme waits that long instead. If
@@ -404,7 +426,7 @@ error, and the host that the redirect names gets no request.
 ## Testing your code
 
 Give the guide a `fetch` that answers from memory. Then your control flow runs with no network,
-no server and no API key. This example is the body of a test in this repository, so it stays
+no server and no API key. This code is the body of a test in this repository, so it stays
 correct:
 
 ```ts
@@ -449,19 +471,25 @@ In the fake response, use the question ids from [Several questions in one
 request](#several-questions-in-one-request). This batch has two questions, so the ids are `q0`
 and `q1`.
 
-The `fetch` setting is also how you replace the _transport_. `fetch` is a platform type, so you
-add no library. Build your own `fetch` for a proxy, a client certificate or a connection pool
-that your program shares. Then give it to the guide. Two examples are a `fetch` that uses an
-`undici` `Agent`, and a wrapper that adds a header. Every other setting of the guide still
-applies to it. `timeout` is an `AbortSignal.timeout` that guideme gives as the `signal` of each
-request.
+To replace the _transport_, give the guide your own `fetch`. Do this for a proxy, a client
+certificate or a connection pool that your program shares. To use a local server instead, set
+`baseUrl`.
 
-To use a local server instead, set `baseUrl`.
+`fetch` is a platform type, so you add no library. Such a `fetch` can use an `undici` `Agent`, or
+add a header and then call the platform `fetch`. Every other setting of the guide still applies
+to it: `timeout` is an `AbortSignal.timeout` that guideme gives as the `signal` of each request.
 
 ## Observability
 
 guideme emits OpenTelemetry spans and events. It installs no provider, no exporter and no
-context manager, so you see nothing until you install a provider. The smallest setup:
+context manager, so you see nothing until you install a provider. Install the OpenTelemetry
+SDK:
+
+```sh
+npm install @opentelemetry/sdk-trace-base
+```
+
+Then add the smallest setup:
 
 ```ts
 import {
@@ -495,24 +523,24 @@ a collector that prints what arrives.
 Each _setting_ is a field of the object that you give to `new Guide({ … })`. The second column
 shows what `Guide.fromEnv()` reads.
 
-| Setting       | Environment variable | Default                   | Meaning                                                                       |
-| ------------- | -------------------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `apiKey`      | `TYPESAFE_API_KEY`   | none                      | the API key, an `ApiKey`. Required.                                           |
-| `baseUrl`     | `TYPESAFE_BASE_URL`  | `https://api.typesafe.ai` | the API origin                                                                |
-| `model`       | `GUIDEME_MODEL`      | `jev-latest`              | the model or alias                                                            |
-| `policy`      |                      | the defaults above        | the policy for every question of this guide                                   |
-| `maxRetries`  |                      | 3                         | retries for 429, 529 and a failure to connect. A non-negative integer.        |
-| `backoff`     |                      | 500 ms                    | the base of the exponential wait. A finite number of milliseconds, 0 or more. |
-| `timeout`     |                      | 30 s                      | the deadline for each attempt. More than 0 ms and at most 2 147 483 647 ms.   |
-| `recordState` |                      | `false`                   | record the state on the span                                                  |
-| `fetch`       |                      | the global `fetch`        | the transport                                                                 |
+| Setting       | Environment variable | Default                   | Meaning                                                                                |
+| ------------- | -------------------- | ------------------------- | -------------------------------------------------------------------------------------- |
+| `apiKey`      | `TYPESAFE_API_KEY`   | none                      | the API key, an `ApiKey`. Required.                                                    |
+| `baseUrl`     | `TYPESAFE_BASE_URL`  | `https://api.typesafe.ai` | the API origin                                                                         |
+| `model`       | `GUIDEME_MODEL`      | `jev-latest`              | the model or alias, a `Model`: the `name` of an entry that `guide.models()` returns    |
+| `policy`      |                      | the defaults above        | the policy for every question of this guide                                            |
+| `maxRetries`  |                      | 3                         | retries for 429, 529 and a failure to connect. A non-negative integer.                 |
+| `backoff`     |                      | 500 (500 ms)              | the base of the exponential wait, in milliseconds. A finite number, 0 or more.         |
+| `timeout`     |                      | 30 000 (30 s)             | the deadline for each attempt, in milliseconds. More than 0 and at most 2 147 483 647. |
+| `recordState` |                      | `false`                   | record the state on the span                                                           |
+| `fetch`       |                      | the global `fetch`        | the transport                                                                          |
 
 A setting out of range is a `config` error when you build the guide. `Guide.fromEnv()` reads the
 variables and builds the guide. It needs `TYPESAFE_API_KEY`. It also takes settings that win over
 the variables: `Guide.fromEnv({ policy: CAUTIOUS })`. If a setting replaces a variable, guideme
 does not read that variable.
 
-Build one guide per process and share it, across requests and across `ask` calls that run at the
+Build one guide per process. Share it across requests and across `ask` calls that run at the
 same time. A guide does not change after you build it, and `ask` keeps no state between calls.
 Each call is its own request, its own span and its own answer. `guide.withPolicy(..)` returns a
 second guide that shares the transport of the first. All the calls share one `fetch`, so an
@@ -524,8 +552,13 @@ Each guideme SDK is written from scratch in its own language. Each one passes th
 policy vectors and renders rubrics the same way.
 [guideme-rust](https://github.com/pedro-pscunha/guideme-rust) publishes this contract under
 `spec/`. So the same probability or confidence and the same thresholds give the same answer in
-each SDK. The retries and redirects are not all the same: [`docs/contract.md`](docs/contract.md)
-records what is specific to this SDK.
+each SDK. The span, event and attribute names are shared, so one dashboard reads every SDK.
+
+The redirects and one retry rule are not the same in every SDK.
+[`docs/contract.md`](docs/contract.md#6-this-client-does-not-follow-redirects-the-rust-client-does)
+records that this SDK does not follow redirects.
+[`docs/design.md`](docs/design.md#the-ones-this-sdk-had-to-decide-for-itself) records that it
+retries the connect timeout of the runtime, and what the other SDKs do.
 
 | Language   | Package                                        | Repository                                                        |
 | ---------- | ---------------------------------------------- | ----------------------------------------------------------------- |
