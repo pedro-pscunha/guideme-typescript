@@ -13,7 +13,6 @@
     "@types/node",
     "zod",
     "@opentelemetry/api",
-    "@opentelemetry/sdk-trace-base",
-    "fast-check"
+    "@opentelemetry/sdk-trace-base"
   ]
 }
