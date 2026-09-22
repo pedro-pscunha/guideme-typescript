@@ -38,7 +38,7 @@ export const confidence = (n: number): Confidence => {
  * rules waiting to diverge, which is the whole subject of design note §11.
  *
  * NEVER `String.prototype.trim()`: ECMAScript's WhiteSpace list is a different set. Measured —
- * `"\u0085".trim().length` is 1 though U+0085 IS `White_Space`, and `"﻿".trim().length`
+ * `"\u0085".trim().length` is 1 though U+0085 IS `White_Space`, and `"\uFEFF".trim().length`
  * is 0 though U+FEFF is NOT. This regex agrees with Rust's `str::trim` on both.
  */
 export const isBlank = (s: string): boolean =>

@@ -213,12 +213,12 @@ test("blank is the Unicode White_Space property, not String.prototype.trim", () 
   refuses("a lone U+0085 example", () => render(option("Payments", { examples: ["\u0085"] })));
 
   // U+FEFF ZERO WIDTH NO-BREAK SPACE: NOT White_Space, so NOT blank. trim() DOES remove it.
-  expect("﻿".trim()).toHaveLength(0);
-  expect(render(option("Payments", { examples: ["﻿"] }))).toBe("Payments\nExamples: ﻿");
+  expect("\uFEFF".trim()).toHaveLength(0);
+  expect(render(option("Payments", { examples: ["\uFEFF"] }))).toBe("Payments\nExamples: \uFEFF");
 
   // The same divergence on the rubric itself: a lone U+0085 what is blank, U+FEFF is not.
   refuses("examples on a U+0085 rubric", () => render(option("\u0085", { examples: ["x"] })));
-  expect(render(option("﻿", { examples: ["x"] }))).toBe("﻿\nExamples: x");
+  expect(render(option("\uFEFF", { examples: ["x"] }))).toBe("\uFEFF\nExamples: x");
 
   // And the C0 separators Python strips are NOT White_Space, so they are not blank here.
   expect(render(option("Payments", { examples: ["\u001C"] }))).toBe("Payments\nExamples: \u001C");
