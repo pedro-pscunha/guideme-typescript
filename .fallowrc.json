@@ -1,0 +1,19 @@
+{
+  "entry": ["src/index.ts", "test/**/*.test.ts", "test/**/*.test-d.ts"],
+  "ignoreDependencies": [
+    "typescript",
+    "prettier",
+    "eslint",
+    "eslint-plugin-import-x",
+    "eslint-plugin-tsdoc",
+    "typescript-eslint",
+    "fallow",
+    "publint",
+    "@arethetypeswrong/cli",
+    "@types/node",
+    "zod",
+    "@opentelemetry/api",
+    "@opentelemetry/sdk-trace-base",
+    "fast-check"
+  ]
+}
