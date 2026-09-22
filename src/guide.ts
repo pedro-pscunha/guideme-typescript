@@ -187,35 +187,39 @@ export class Guide {
     });
 
     try {
-      const parsedState: unknown = JSON.parse(json);
-      const response = await this.#client.evaluate({
-        state: parsedState,
-        model: this.#model,
-        questions: plan.questions,
-      });
-      span.response(response.model, response.usage.input_tokens, response.usage.output_tokens);
+      // Everything below runs with the ask span ACTIVE, which is what makes each HTTP attempt
+      // span its child rather than a root of its own.
+      return await span.run(async () => {
+        const parsedState: unknown = JSON.parse(json);
+        const response = await this.#client.evaluate({
+          state: parsedState,
+          model: this.#model,
+          questions: plan.questions,
+        });
+        span.response(response.model, response.usage.input_tokens, response.usage.output_tokens);
 
-      const replies: Record<string, Reply> = {};
-      for (const [id, thresholds] of Object.entries(plan.thresholds)) {
-        const answer = response.answers[id];
-        if (answer === undefined) throw protocolError(`no answer for question ${id}`);
-        const outcome = resolve(answer, thresholds);
-        answerEvent(span, id, outcome, thresholds);
-        replies[id] = { outcome, thresholds };
-      }
+        const replies: Record<string, Reply> = {};
+        for (const [id, thresholds] of Object.entries(plan.thresholds)) {
+          const answer = response.answers[id];
+          if (answer === undefined) throw protocolError(`no answer for question ${id}`);
+          const outcome = resolve(answer, thresholds);
+          answerEvent(span, id, outcome, thresholds);
+          replies[id] = { outcome, thresholds };
+        }
 
-      // The one `as` in src/ outside the branded-scalar constructors. `decodeShape` walks a
-      // `Claim`, which has erased `S` by construction; threading `S` through `Claim` would
-      // make it a recursive generic mirroring `Shape` and produce the same value.
-      // eslint-disable-next-line no-restricted-syntax -- Claim erased S by construction; the shape-to-answer relationship is this method's return type, proven for every shape in test/typing.test-d.ts
-      const answer = decodeShape(plan.claim, replies) as Answered<S>;
-      return Object.freeze({
-        answer,
-        model: model(response.model),
-        usage: Object.freeze({
-          inputTokens: response.usage.input_tokens,
-          outputTokens: response.usage.output_tokens,
-        }),
+        // The one `as` in src/ outside the branded-scalar constructors. `decodeShape` walks a
+        // `Claim`, which has erased `S` by construction; threading `S` through `Claim` would
+        // make it a recursive generic mirroring `Shape` and produce the same value.
+        // eslint-disable-next-line no-restricted-syntax -- Claim erased S by construction; the shape-to-answer relationship is this method's return type, proven for every shape in test/typing.test-d.ts
+        const answer = decodeShape(plan.claim, replies) as Answered<S>;
+        return Object.freeze({
+          answer,
+          model: model(response.model),
+          usage: Object.freeze({
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+          }),
+        });
       });
     } catch (e) {
       failAskSpan(span, e);

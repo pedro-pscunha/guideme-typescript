@@ -1,4 +1,4 @@
-import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { SpanKind, SpanStatusCode, context, trace } from "@opentelemetry/api";
 import type { Attributes, Span, Tracer } from "@opentelemetry/api";
 import { GuidemeError, assertNever } from "./errors.js";
 import type { ErrorKind } from "./errors.js";
@@ -32,6 +32,14 @@ export interface HttpSpan extends SpanHandle {
 interface AskSpan extends SpanHandle {
   /** Record what the response said, once it has arrived. */
   response(model: string, inputTokens: number, outputTokens: number): void;
+  /**
+   * Run `fn` with this span active, and return what it returns.
+   *
+   * OpenTelemetry JS parents a span by the **active** context, and starting one does not
+   * activate it, so without this every HTTP attempt span would be a root. `docs/observability.md`
+   * says they are children of the ask span, which is what makes one trace explain one decision.
+   */
+  run<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /** Attributes of one HTTP attempt span. */
@@ -111,6 +119,9 @@ export const askSpan = (o: AskSpanOptions): AskSpan => {
       span.setAttribute("gen_ai.response.model", model);
       span.setAttribute("gen_ai.usage.input_tokens", int(inputTokens));
       span.setAttribute("gen_ai.usage.output_tokens", int(outputTokens));
+    },
+    run<T>(fn: () => Promise<T>): Promise<T> {
+      return context.with(trace.setSpan(context.active(), span), fn);
     },
     end: () => {
       span.end();
