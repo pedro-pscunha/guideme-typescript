@@ -28,9 +28,10 @@ The first release. It ships the whole guideme 0.2.0 contract, as published by
 - `@opentelemetry/api` as a required peer dependency, `^1.9.0`, and `zod` as `^4.6.5`. npm
   refuses the install (`ERESOLVE`) when the application's API does not satisfy `^1.9.0`; bun
   and pnpm warn, then use the application's copy.
-- Type exports for everything a signature can reach: `ChoiceDescriptor`, `LevelsDescriptor`,
-  `DetailedNoulQuestion`, `DetailedChoiceQuestion`, `DetailedScoreQuestion`,
-  `GuidemeErrorOptions`, `Shape`, `Answered`, `Instructions`, `OptionParts` and `LevelParts`,
-  so a caller never has to spell `ReturnType<..>` or `Parameters<..>`. A question type's
-  answer parameter is structural, so a `.detail()` or a question of one key set never passes
-  for another's.
+- Type exports for every type a caller writes in a signature: `ChoiceDescriptor`,
+  `LevelsDescriptor`, `DetailedNoulQuestion`, `DetailedChoiceQuestion`,
+  `DetailedScoreQuestion`, `GuidemeErrorOptions`, `Shape`, `Answered`, `Instructions`,
+  `OptionParts` and `LevelParts`, so a caller never has to spell `ReturnType<..>` or
+  `Parameters<..>`. A question type's answer parameter is structural, so a `.detail()` or a
+  question of one key set never passes for another's, and a question cannot be written as an
+  object literal.

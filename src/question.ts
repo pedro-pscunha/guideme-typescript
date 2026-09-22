@@ -46,9 +46,10 @@ const keysOf = <S extends object>(spec: S): Extract<keyof S, string>[] =>
  *
  * `Out` otherwise appears only in `or`'s parameter and in the recursive return types, so it
  * was a free label: `DetailedChoiceQuestion<number>` accepted a real `.detail()`, and a choice
- * over one key set passed for a choice over another. An optional member typed `Out` makes the
- * parameter structural and covariant. No value ever carries it, and this symbol is not
- * exported, so no caller can write one either.
+ * over one key set passed for a choice over another. A member typed `Out` makes the parameter
+ * structural and covariant. It is required, so a question cannot be written as an object
+ * literal any more than a descriptor can: this symbol is not exported, and no caller can write
+ * the key. No value carries it at run time either; the classes only `declare` it.
  */
 declare const answer: unique symbol;
 
@@ -209,8 +210,11 @@ export const levels = <const S extends Readonly<Record<string, string | LevelRub
 export interface NoulQuestion<Out = boolean> {
   /** Discriminant. */
   readonly kind: "noul";
-  /** Never set. Carries the answer type, so two questions answering different types differ. */
-  readonly [answer]?: Out;
+  /**
+   * Type only, never set at run time. Carries the answer type, so two questions answering
+   * different types differ, and a question cannot be written as an object literal.
+   */
+  readonly [answer]: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): NoulQuestion<Out>;
   /** `p \>= yesAbove` is yes. */
@@ -229,8 +233,11 @@ export interface NoulQuestion<Out = boolean> {
 export interface ChoiceQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "choice";
-  /** Never set. Carries the answer type, so two questions answering different types differ. */
-  readonly [answer]?: Out;
+  /**
+   * Type only, never set at run time. Carries the answer type, so two questions answering
+   * different types differ, and a question cannot be written as an object literal.
+   */
+  readonly [answer]: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ChoiceQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -245,8 +252,11 @@ export interface ChoiceQuestion<K extends string, Out = K> {
 export interface ScoreQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "score";
-  /** Never set. Carries the answer type, so two questions answering different types differ. */
-  readonly [answer]?: Out;
+  /**
+   * Type only, never set at run time. Carries the answer type, so two questions answering
+   * different types differ, and a question cannot be written as an object literal.
+   */
+  readonly [answer]: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ScoreQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -274,6 +284,8 @@ export interface ScoreQuestion<K extends string, Out = K> {
 export interface DetailedNoulQuestion {
   /** Discriminant. */
   readonly kind: "noul";
+  /** Type only, never set at run time. Makes an object literal of this shape a type error. */
+  readonly [answer]: Verdict;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedNoulQuestion;
   /** `p \>= yesAbove` is yes. */
@@ -291,8 +303,11 @@ export interface DetailedNoulQuestion {
 export interface DetailedChoiceQuestion<Out> {
   /** Discriminant. */
   readonly kind: "choice";
-  /** Never set. Carries the answer type, so two questions answering different types differ. */
-  readonly [answer]?: Out;
+  /**
+   * Type only, never set at run time. Carries the answer type, so two questions answering
+   * different types differ, and a question cannot be written as an object literal.
+   */
+  readonly [answer]: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedChoiceQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -306,8 +321,11 @@ export interface DetailedChoiceQuestion<Out> {
 export interface DetailedScoreQuestion<Out> {
   /** Discriminant. */
   readonly kind: "score";
-  /** Never set. Carries the answer type, so two questions answering different types differ. */
-  readonly [answer]?: Out;
+  /**
+   * Type only, never set at run time. Carries the answer type, so two questions answering
+   * different types differ, and a question cannot be written as an object literal.
+   */
+  readonly [answer]: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedScoreQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -394,8 +412,8 @@ interface NoulState<Out> {
 
 class NoulImpl<Out> {
   readonly kind = "noul" as const;
-  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
-  declare readonly [answer]?: Out;
+  /** Type only, never set: the interfaces require it, so the classes declare it. */
+  declare readonly [answer]: Out;
   readonly #s: NoulState<Out>;
 
   constructor(s: NoulState<Out>) {
@@ -504,8 +522,8 @@ interface ChoiceState<K extends string, Out> {
 
 class ChoiceImpl<K extends string, Out> {
   readonly kind = "choice" as const;
-  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
-  declare readonly [answer]?: Out;
+  /** Type only, never set: the interfaces require it, so the classes declare it. */
+  declare readonly [answer]: Out;
   readonly #s: ChoiceState<K, Out>;
 
   constructor(s: ChoiceState<K, Out>) {
@@ -617,8 +635,8 @@ interface ScoreState<K extends string, Out> {
 
 class ScoreImpl<K extends string, Out> {
   readonly kind = "score" as const;
-  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
-  declare readonly [answer]?: Out;
+  /** Type only, never set: the interfaces require it, so the classes declare it. */
+  declare readonly [answer]: Out;
   readonly #s: ScoreState<K, Out>;
 
   constructor(s: ScoreState<K, Out>) {

@@ -228,7 +228,7 @@ missed. `.detail()` skips the ladder and hands you the reading to decide yoursel
 it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does not compile,
 rather than compiling and discarding `x`.
 
-Every type you can reach is exported by name, so a signature never has to spell
+Every type a caller writes in a signature is exported by name, so none has to be spelled
 `ReturnType<..>`:
 
 - `.detail()` returns a `DetailedNoulQuestion`, a `DetailedChoiceQuestion<Ranked<K>>` or a
@@ -238,8 +238,10 @@ Every type you can reach is exported by name, so a signature never has to spell
 - The constructors take `Instructions`; `option`, `fallback` and `level` take `OptionParts` and
   `LevelParts`.
 
-A descriptor or a rubric cannot be written as an object literal: the brand is set only by
-`choice`, `levels`, `option`, `fallback` and `level`.
+A question, a descriptor or a rubric cannot be written as an object literal. Each comes only
+from its constructor: a question from `noul`, `choose`, `score`, `chooseAmong` or
+`scoreLevels`, a descriptor from `choice` or `levels`, a rubric from `option`, `fallback` or
+`level`.
 
 A **runtime** choice has two rungs, not three. `chooseAmong` answers a `Key`, and there is no
 descriptor to carry a marked option, so handing it a `fallback()` value is a `config` error

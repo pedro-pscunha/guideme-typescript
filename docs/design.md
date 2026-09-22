@@ -59,14 +59,18 @@ Each module survives the test.
   `Parameters<..>`, which would otherwise become the de facto API. They are parameterised by the
   **answer** rather than by the key, because that is the type argument `Answered` reads straight
   back off the reference.
-- **A question's answer type is structural.** Every question interface carries
-  `readonly [answer]?: Out`, keyed by a `declare`d `unique symbol` that is never exported and
-  never set. Without it `Out` appeared only in `or`'s parameter — bivariant, as a method — and
-  in recursive return types, so it was a free label: `DetailedChoiceQuestion<number>` held a
-  real `.detail()`, and a choice over one key set passed for a choice over another. The member
-  makes `Out` covariant, and through `detail()`'s return type it pins `K` too. The three
-  implementation classes declare the same member, type only, so narrowing an `AnyQuestion` to
-  them still finds a subtype.
+- **A question's answer type is structural, and a question cannot be written by hand.** Every
+  question interface carries `readonly [answer]: Out` (`DetailedNoulQuestion` carries
+  `Verdict`), keyed by a `declare`d `unique symbol` that is never exported and never set at run
+  time. Without it `Out` appeared only in `or`'s parameter — bivariant, as a method — and in
+  recursive return types, so it was a free label: `DetailedChoiceQuestion<number>` held a real
+  `.detail()`, and a choice over one key set passed for a choice over another. The member makes
+  `Out` covariant, and through `detail()`'s return type it pins `K` too. It is **required**, so
+  an object literal with every method of a question is a type error, as a hand-built descriptor
+  already was: no caller can write the key. The three implementation classes `declare` the same
+  member, type only. The runtime guard stays as the second line: `encodeQuestion` refuses
+  anything that is not one of those classes with a `config` error, for a value that reached it
+  through `unknown`.
 - **Two rubric types where Rust has one.** Rust's `Rubric` is a single struct used in every
   rubric position, and "a level carries no counterexample" is a check inside `render_levels`
   plus a compile error inside `#[derive(Levels)]`. Here `option(..)` returns an `OptionRubric`
