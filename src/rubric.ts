@@ -183,8 +183,14 @@ const checkShared = (
   }
 };
 
-/** Check a noul's yes/no pair against each other, then render both. */
-export const renderPair = (yes: AnyRubric, no: AnyRubric): readonly [string, string] => {
+/**
+ * Check a noul's yes/no pair against each other, then render both.
+ *
+ * Both sides are {@link OptionRubric}, never a {@link LevelRubric}: a yes and a no are two
+ * alternatives rather than two positions on a scale, so either may carry counterexamples and a
+ * level may not. Rust's `render_pair` takes the option-shaped rubric for the same reason.
+ */
+export const renderPair = (yes: OptionRubric, no: OptionRubric): readonly [string, string] => {
   checkShared([yes, no], "option", (i) => (i === 0 ? "yes" : "no"));
   return [render(yes), render(no)];
 };
