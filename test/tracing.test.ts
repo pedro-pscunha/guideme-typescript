@@ -25,20 +25,27 @@ const NOUL_AS_Q0 = JSON.stringify(noulQ0);
 
 const exporter = new InMemorySpanExporter();
 
-// Registered once, at module scope, not in `beforeEach`. The OpenTelemetry API keeps ONE
-// global provider and a `ProxyTracer` caches its delegate the first time it resolves one, so a
-// second registration would not reach `src/telemetry.ts`'s module-level tracer anyway.
-// Resetting the exporter is what isolates each case, and that is what `beforeEach` does.
-trace.setGlobalTracerProvider(
-  new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }),
-);
-// And a context manager, which `BasicTracerProvider` does not install and an application's
+// A context manager, which `BasicTracerProvider` does not install and an application's
 // `NodeSDK` does. Without one, `context.active()` is always the root and the HTTP attempt
 // spans are roots too; `docs/observability.md` records that this is what carries the parenting.
 useAsyncContext();
 
+// A fresh provider per case, which means `trace.disable()` first: the API refuses a second
+// registration while one is standing. Resetting the exporter alone would isolate the cases
+// just as well, so the reason for doing it the hard way is the `disable()`. It throws away the
+// `ProxyTracerProvider` every previously handed-out `ProxyTracer` is bound to, which is the
+// same position `src/telemetry.ts` is in when an application resolves its own copy of
+// `@opentelemetry/api` — the copy whose `register()` never touches this one's proxy. A tracer
+// cached at import time would be a no-op from the second case onward and every assertion below
+// would fail; resolving it per span, as `telemetry.ts` does, is what keeps them passing. That
+// makes this setup the regression guard for a failure that is otherwise invisible until an
+// application with two copies of the API gets no telemetry at all.
 beforeEach(() => {
   exporter.reset();
+  trace.disable();
+  trace.setGlobalTracerProvider(
+    new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }),
+  );
 });
 
 const spansNamed = (name: string): readonly ReadableSpan[] =>

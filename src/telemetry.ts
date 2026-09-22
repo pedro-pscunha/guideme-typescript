@@ -8,8 +8,21 @@ import type { Outcome, Thresholds } from "./policy.js";
 // answer event is shaped by what the policy concluded, and copying `Outcome`'s field names
 // into this module would be a second declaration of the same thing.
 
-/** The tracer every span in this package comes from. The library installs no provider. */
-const tracer: Tracer = trace.getTracer("guideme");
+/**
+ * The tracer every span in this package comes from. The library installs no provider.
+ *
+ * Resolved per span rather than once at import. `trace.getTracer` reads the registered
+ * provider off `globalThis` at call time, so a tracer taken here finds the application's
+ * provider even when the application and this package resolve two different copies of
+ * `@opentelemetry/api` — which happens whenever the application's version differs from the
+ * exact `1.9.1` this package depends on, or its installer does not deduplicate the two. A
+ * tracer cached at import cannot: it is a `ProxyTracer` bound to this copy's own
+ * `ProxyTracerProvider`, and the application's `register()` sets the delegate on the other
+ * copy's, leaving this one a no-op for the life of the process. Measured in `examples/otlp`,
+ * which has two copies: with the tracer cached, one span reached the collector; with it
+ * resolved here, all three did.
+ */
+const tracer = (): Tracer => trace.getTracer("guideme");
 
 /** OpenTelemetry attributes are signed integers where the contract says `i64`. */
 const int = (n: number): number => Math.trunc(n);
@@ -62,7 +75,7 @@ interface HttpSpanOptions {
 
 /** One span per HTTP attempt, shaped by the OpenTelemetry HTTP client conventions. */
 export const httpSpan = (o: HttpSpanOptions): HttpSpan => {
-  const span = tracer.startSpan(o.name, {
+  const span = tracer().startSpan(o.name, {
     kind: SpanKind.CLIENT,
     attributes: {
       "http.request.method": o.method,
@@ -100,7 +113,7 @@ interface AskSpanOptions {
 
 /** One span per `Guide.ask`, shaped by the OpenTelemetry GenAI conventions. */
 export const askSpan = (o: AskSpanOptions): AskSpan => {
-  const span = tracer.startSpan("guideme.ask", {
+  const span = tracer().startSpan("guideme.ask", {
     kind: SpanKind.CLIENT,
     attributes: {
       "gen_ai.provider.name": "typesafe",

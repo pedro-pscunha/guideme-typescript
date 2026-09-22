@@ -35,6 +35,20 @@ what puts the ask span under the caller's own span, so it is the same mechanism 
 directions. `test/support/context.ts` is a thirty-line version of that manager, which is how
 `test/tracing.test.ts` asserts the tree above without the package growing a dependency.
 
+**The tracer is resolved per span, not once at import.** This package depends on
+`@opentelemetry/api` `1.9.1` exactly, so an application that resolves any other version, or
+whose installer does not deduplicate the two, has two copies of the API, and only one of them
+is the one its `register()` reaches. A tracer taken at import time is a `ProxyTracer` bound to
+this copy's own proxy provider and would stay a no-op for the life of the process — the
+package would emit nothing at all, silently. `trace.getTracer` reads the registered provider
+off `globalThis`, which both copies share, so taking it at span creation is what makes the
+two-copy case work. `examples/otlp` is that case, and `test/tracing.test.ts` registers a fresh
+provider per case, which is the same position and is what keeps this from regressing.
+
+One limit is the API's, not this package's: a copy only accepts a global registered by the
+same major and an equal or newer minor. An application whose own `@opentelemetry/api` is
+`1.8` or older registers a global this package's `1.9.1` refuses, and its spans are dropped.
+
 ### Span `guideme.ask`
 
 | Field                           | Type           | Meaning                                              |
