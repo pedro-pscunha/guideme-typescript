@@ -11,6 +11,8 @@ const MAX_BACKOFF_MS = 30_000;
 const DEFAULT_BACKOFF_MS = 500;
 const JITTER_MS = 250;
 const DEFAULT_MAX_RETRIES = 3;
+/** The longest delay a timer holds. Node clamps anything larger to 1 ms and fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** How to reach the API. */
 interface ClientOptions {
@@ -101,23 +103,27 @@ const readErrorBody = async (response: Response): Promise<ErrorBody> => {
   }
 };
 
-/** 429 and 529, once the budget is gone or the wait the API asked for is too long. */
-const throttled = (status: number, retryAfterMs: number | undefined): GuidemeError => {
+/**
+ * 429 and 529, once the budget is gone or the wait the API asked for is too long. `attempts`
+ * is how many requests were made, which is what the message reports when the API sent no
+ * `retry-after` to report instead.
+ */
+const throttled = (
+  status: number,
+  retryAfterMs: number | undefined,
+  attempts: number,
+): GuidemeError => {
   // Spread rather than passed straight through: `exactOptionalPropertyTypes` distinguishes an
   // absent `retry-after` from one explicitly set to `undefined`, and the API sending no header
   // is the absent case.
   const carried = retryAfterMs === undefined ? {} : { retryAfterMs };
+  const why =
+    retryAfterMs === undefined
+      ? `after ${String(attempts)} attempts`
+      : `(retry-after: ${String(retryAfterMs)} ms)`;
   return status === 429
-    ? new GuidemeError(
-        "rate_limited",
-        `rate limited (retry-after: ${String(retryAfterMs)})`,
-        carried,
-      )
-    : new GuidemeError(
-        "overloaded",
-        `TypeSafe is overloaded (retry-after: ${String(retryAfterMs)})`,
-        carried,
-      );
+    ? new GuidemeError("rate_limited", `rate limited ${why}`, carried)
+    : new GuidemeError("overloaded", `TypeSafe is overloaded ${why}`, carried);
 };
 
 /** One request, with everything the retry loop needs to make it again. */
@@ -236,7 +242,18 @@ const afterStatus = async (
   const retryAfterMs = parseRetryAfter(response.headers);
   if (last || (retryAfterMs !== undefined && retryAfterMs > MAX_BACKOFF_MS)) {
     span.end();
-    throw throttled(response.status, retryAfterMs);
+    throw throttled(response.status, retryAfterMs, attempt + 1);
+  }
+  // Release the throttled response's body before waiting, so the connection is not held open
+  // across the wait. A stream that refuses to cancel is not ignored: the attempt cannot be
+  // cleanly abandoned, so it fails as transport with the refusal as its cause.
+  try {
+    await response.body?.cancel();
+  } catch (e) {
+    const err = transportError("a throttled response's body could not be released", e);
+    failSpan(span, err.kind, err.message);
+    span.end();
+    throw err;
   }
   const delay = retryAfterMs ?? backoffFor(opts, attempt);
   retryEvent(span, { status: response.status, attempt: attempt + 1, delayMs: delay });
@@ -317,14 +334,14 @@ const originOf = (raw: string): Origin => {
     // `new URL` throws a plain TypeError, which is the class the retry loop resends on. It is
     // caught HERE, once, at construction, so a typo in baseUrl can never reach an attempt and
     // be retried three times before being reported as a transport failure.
-    throw configError(`base_url ${JSON.stringify(trimmed)} is not a URL`);
+    throw configError(`baseUrl ${JSON.stringify(trimmed)} is not a URL`);
   }
   if (parsed.username !== "" || parsed.password !== "") {
-    throw configError("base_url must not carry credentials; use the api_key");
+    throw configError("baseUrl must not carry credentials; use apiKey");
   }
   const port = portOf(parsed);
   if (parsed.hostname === "" || port === 0) {
-    throw configError(`base_url ${JSON.stringify(trimmed)} needs a host and a port`);
+    throw configError(`baseUrl ${JSON.stringify(trimmed)} needs a host and a port`);
   }
   return { trimmed, host: parsed.hostname, port };
 };
@@ -351,11 +368,12 @@ const checked = (
  * Refused here, once, because each fails later in a way that names the wrong thing: a negative
  * or fractional budget never equals the attempt counter, so the loop never reaches its last
  * attempt; a non-finite backoff waits forever; a non-positive deadline is refused by
- * `AbortSignal.timeout` on the first attempt and would surface as a transport failure.
+ * `AbortSignal.timeout` on the first attempt and would surface as a transport failure; and a
+ * deadline above what a timer can hold is clamped by Node to 1 ms, so it fires at once.
  */
 const budgetOf = (options: ClientOptions): Budget => ({
   maxRetries: checked(
-    "max_retries",
+    "maxRetries",
     options.maxRetries ?? DEFAULT_MAX_RETRIES,
     (n) => Number.isSafeInteger(n) && n >= 0,
     "a non-negative integer",
@@ -369,8 +387,8 @@ const budgetOf = (options: ClientOptions): Budget => ({
   timeout: checked(
     "timeout",
     options.timeout ?? DEFAULT_TIMEOUT_MS,
-    (n) => Number.isFinite(n) && n > 0,
-    "a finite number of milliseconds > 0",
+    (n) => Number.isFinite(n) && n > 0 && n <= MAX_TIMER_MS,
+    `a number of milliseconds > 0 and <= ${String(MAX_TIMER_MS)}`,
   ),
 });
 

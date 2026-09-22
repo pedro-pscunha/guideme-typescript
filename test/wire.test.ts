@@ -421,25 +421,65 @@ test("unsure with no fallback names the question; an empty batch is a config err
     { timeout: -5 },
     { timeout: Number.NaN },
     { timeout: Number.POSITIVE_INFINITY },
+    // Node clamps a timer above 2^31-1 ms to 1 ms, so a larger deadline would fire at once.
+    { timeout: 2 ** 31 },
   ]) {
     expect(
       () => new Guide({ apiKey: new ApiKey("k"), ...bad }),
       `${JSON.stringify(bad)} is refused when the guide is built`,
     ).toThrow(expect.objectContaining({ kind: "config" }));
   }
-  // A descriptor assembled by hand with a rubric missing is refused, not padded with `null`:
-  // `null` means "described not at all", and inventing that declaration would put a bare key on
-  // the wire that nobody wrote.
-  const lopsided = { descriptor: "choice", keys: ["a", "b"], rubrics: [option("a")] } as const;
+  // A descriptor assembled by hand — which the type forbids, so only JavaScript can hand one in
+  // — is refused when its keys and rubrics disagree, not padded with `null`: `null` means
+  // "described not at all", and inventing that would put a bare key on the wire nobody wrote.
+  // Built through `unknown` because the brand is what makes it a type error.
+  type Descriptor = Parameters<typeof choose>[0];
+  const handBuilt = (keys: readonly string[], rubrics: readonly unknown[]): Descriptor =>
+    ({ descriptor: "choice", keys, rubrics, fallbackKey: undefined }) as unknown as Descriptor;
   await expect(
-    guide.ask(choose({ ...lopsided, fallbackKey: undefined }, "Which?"), "x"),
+    guide.ask(choose(handBuilt(["a", "b"], [option("a")]), "Which?"), "x"),
     "a key without its rubric is a config error",
+  ).rejects.toMatchObject({ kind: "config" });
+  await expect(
+    guide.ask(choose(handBuilt(["a", "a"], [option("a"), option("b")]), "Which?"), "x"),
+    "a key given twice is a config error",
   ).rejects.toMatchObject({ kind: "config" });
 
   expect(
-    new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 1 }),
-    "zero retries, zero backoff and a one-millisecond deadline are all legal",
+    new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 2 ** 31 - 1 }),
+    "zero retries, zero backoff and the largest deadline a timer can hold are all legal",
   ).toBeInstanceOf(Guide);
+
+  // State is whatever `JSON.stringify` makes of it, checked after `toJSON` has run: a value
+  // shared by two fields is not a cycle, and a class whose `toJSON` drops a NaN field is fine.
+  // A non-finite number that would reach the JSON, a bigint and a real cycle are refused.
+  const customer = { id: 7 };
+  class Masked {
+    readonly score = Number.NaN;
+    toJSON(): unknown {
+      return { masked: true };
+    }
+  }
+  await expect(
+    guide.ask(noul("Urgent?"), { a: customer, b: customer }),
+    "a shared reference is not a cycle",
+  ).resolves.toBe(true);
+  await expect(
+    guide.ask(noul("Urgent?"), new Masked()),
+    "a NaN that toJSON removes never reaches the JSON",
+  ).resolves.toBe(true);
+  const cyclic: Record<string, unknown> = {};
+  cyclic["self"] = cyclic;
+  for (const [what, state] of [
+    ["a NaN", Number.NaN],
+    ["an Infinity inside an object", { n: Number.POSITIVE_INFINITY }],
+    ["a bigint", { n: 1n }],
+    ["a real cycle", cyclic],
+  ] as const) {
+    await expect(guide.ask(noul("Urgent?"), state), `${what} is refused`).rejects.toMatchObject({
+      kind: "config",
+    });
+  }
 });
 
 test("askWithReceipt returns the response's model and usage exactly", async () => {
@@ -600,4 +640,22 @@ test("an injected fetch is the only transport, and the README recipe is this inp
     { url: "https://api.typesafe.ai/v1/systemone", authorization: "Bearer sk-test" },
   ]);
   expect(realFetch).not.toHaveBeenCalled();
+
+  // A throttled response's body is released before the wait, so a retry never leaves the
+  // previous attempt's stream open behind it.
+  let released = false;
+  const throttledThenOk: typeof globalThis.fetch = () => {
+    if (!released) {
+      const body = new ReadableStream<Uint8Array>({
+        cancel: () => {
+          released = true;
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 429, headers: { "retry-after": "0" } }));
+    }
+    return Promise.resolve(new Response(NOUL_AS_Q0, { status: 200 }));
+  };
+  const patient = new Guide({ apiKey: new ApiKey("sk-test"), fetch: throttledThenOk });
+  await expect(patient.ask(noul("Urgent?"), "x"), "the retry answers").resolves.toBe(true);
+  expect(released, "the 429's body was cancelled before the retry").toBe(true);
 });

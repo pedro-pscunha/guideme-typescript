@@ -1,19 +1,20 @@
 import { configError, protocolError } from "./errors.js";
+import type { brand } from "./brand.js";
 
 /** A probability in the closed unit interval, validated once at the wire. */
-export type Probability = number & { readonly __brand: "Probability" };
+export type Probability = number & { readonly [brand]: "Probability" };
 
 /** A confidence in the closed unit interval, validated once at the wire. */
-export type Confidence = number & { readonly __brand: "Confidence" };
+export type Confidence = number & { readonly [brand]: "Confidence" };
 
 /** A model name or alias accepted by the API's `model` field. */
-export type Model = string & { readonly __brand: "Model" };
+export type Model = string & { readonly [brand]: "Model" };
 
 /** A runtime option key, from `chooseAmong`. */
-export type Key = string & { readonly __brand: "Key" };
+export type Key = string & { readonly [brand]: "Key" };
 
 /** A runtime level index, from `scoreLevels`. */
-export type Rank = number & { readonly __brand: "Rank" };
+export type Rank = number & { readonly [brand]: "Rank" };
 
 const inUnitInterval = (n: number): boolean => n >= 0 && n <= 1;
 

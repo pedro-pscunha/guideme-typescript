@@ -68,14 +68,14 @@ export const thresholds = (
   minConfidence: number,
 ): Thresholds => {
   for (const [name, v] of [
-    ["yes_above", yesAbove],
-    ["no_below", noBelow],
-    ["min_confidence", minConfidence],
+    ["yesAbove", yesAbove],
+    ["noBelow", noBelow],
+    ["minConfidence", minConfidence],
   ] as const) {
     if (!(v >= 0 && v <= 1)) throw configError(`${name} = ${String(v)} is outside 0..=1`);
   }
   if (noBelow > yesAbove) {
-    throw configError(`no_below ${String(noBelow)} > yes_above ${String(yesAbove)}`);
+    throw configError(`noBelow ${String(noBelow)} > yesAbove ${String(yesAbove)}`);
   }
   return Object.freeze({ yesAbove, noBelow, minConfidence });
 };

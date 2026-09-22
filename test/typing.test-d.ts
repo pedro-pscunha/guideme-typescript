@@ -282,6 +282,22 @@ test("illegal states are compiler errors", () => {
   // @ts-expect-error level() takes examples only; a counterexample on a level is meaningless
   level("x", { counterexamples: ["y"] });
 
+  const optionShaped: { examples: string[]; counterexamples: string[] } = {
+    examples: ["y"],
+    counterexamples: ["z"],
+  };
+  // @ts-expect-error and passed through a variable too, where excess-property checks do not run
+  level("x", optionShaped);
+
+  // @ts-expect-error a descriptor comes from choice(); a lookalike built by hand has no brand
+  choose({ descriptor: "choice", keys: ["a", "b"], rubrics: [], fallbackKey: undefined }, "Which?");
+
+  // @ts-expect-error a rubric comes from option(); a lookalike built by hand has no brand
+  choice({
+    a: { rubric: "option", what: "a", examples: [], counterexamples: [], isFallback: false },
+    b: option("b"),
+  });
+
   // @ts-expect-error examples is a list of strings, never a bare string
   option("x", { examples: "not a list" });
 

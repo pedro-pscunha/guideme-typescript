@@ -1,4 +1,5 @@
 import { assertNever, configError, protocolError, unsureError } from "./errors.js";
+import { brand } from "./brand.js";
 import type { GuidemeError } from "./errors.js";
 import { over, settle } from "./policy.js";
 import type { Outcome, Policy, Thresholds, Verdict } from "./policy.js";
@@ -45,6 +46,8 @@ type Instructions = string | Readonly<Record<string, unknown>>;
 
 /** An ordered set of options, declared once and reused. Built by {@link choice}. */
 interface ChoiceDescriptor<K extends string> {
+  /** Set only by {@link choice}, so a lookalike built by hand is a type error. */
+  readonly [brand]: "choice";
   /** Discriminant. */
   readonly descriptor: "choice";
   /** The option keys, in declaration order. */
@@ -59,10 +62,11 @@ interface ChoiceDescriptor<K extends string> {
 export type Option<D> = D extends ChoiceDescriptor<infer K> ? K : never;
 
 /**
- * Each key with its rubric, walked together. The two arrays are built side by side, so a
- * length mismatch means a descriptor was assembled by hand — by JavaScript, since the type
- * cannot express one — and it is refused rather than padded: a missing rubric is not `null`,
- * which means "an option described not at all", and filling one in would invent a declaration.
+ * Each key with its rubric, walked together. The two arrays are built side by side from
+ * `Object.keys`, so a length mismatch or a repeated key means a descriptor was assembled by
+ * hand — by JavaScript, since the brand makes it a type error — and it is refused rather than
+ * repaired: a missing rubric is not `null`, which means "an option described not at all", and
+ * a repeated key would collapse into one criterion on the wire.
  */
 const paired = <K extends string>(
   keys: readonly K[],
@@ -77,6 +81,7 @@ const paired = <K extends string>(
       `a choice has ${String(keys.length)} keys but ${String(rubrics.length)} rubrics`,
     );
   }
+  if (new Set(keys).size !== keys.length) throw configError("duplicate option keys");
   return pairs;
 };
 
@@ -123,6 +128,7 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
   // Rule 5 runs here so a shared example fails where the set was declared.
   const fallbackKey = checkedOptions(keys, rubrics, "declared");
   return Object.freeze({
+    [brand]: "choice" as const,
     descriptor: "choice",
     keys: Object.freeze(keys),
     rubrics: Object.freeze(rubrics),
@@ -132,6 +138,8 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
 
 /** An ordered scale, declared once. Declaration order is level order, low to high. */
 interface LevelsDescriptor<K extends string> {
+  /** Set only by {@link levels}, so a lookalike built by hand is a type error. */
+  readonly [brand]: "levels";
   /** Discriminant. */
   readonly descriptor: "levels";
   /** The level keys, low to high. */
@@ -171,6 +179,7 @@ export const levels = <const S extends Readonly<Record<string, string | LevelRub
   // Annotated rather than inlined into `Object.freeze`, which infers its argument's type and
   // so would leave the three comparators' parameters implicitly `any`.
   const descriptor: LevelsDescriptor<Extract<keyof S, string>> = {
+    [brand]: "levels",
     descriptor: "levels",
     keys: Object.freeze(keys),
     rubrics: Object.freeze(rubrics),
@@ -490,9 +499,6 @@ class ChoiceImpl<K extends string, Out> {
     const rendered = renderOptions(paired(keys, this.#s.rubrics));
     const criteria: Record<string, string | null> = {};
     for (const [name, text] of rendered) criteria[name] = text;
-    if (Object.keys(criteria).length !== keys.length) {
-      throw configError("duplicate option keys");
-    }
     return {
       wire: { type: "choice", instructions: this.#s.instructions, criteria },
       thresholds: settle(over(this.#s.policy, base)),

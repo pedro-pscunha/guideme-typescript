@@ -1,4 +1,5 @@
 import { configError } from "./errors.js";
+import { brand } from "./brand.js";
 import { isBlank } from "./scalars.js";
 
 // The three primitives, each named rather than idiomatic. Design note §11: a prose rule whose
@@ -34,6 +35,12 @@ export interface OptionParts {
 export interface LevelParts {
   /** Inputs that score at this level. A written-out empty list is refused. */
   readonly examples?: readonly string[];
+  /**
+   * Never. Stated so an {@link OptionParts} value passed through a variable is a type error
+   * too: without it, excess-property checking only catches the object-literal form, and the
+   * counterexamples of a variable would be dropped without a word.
+   */
+  readonly counterexamples?: never;
 }
 
 /**
@@ -41,6 +48,8 @@ export interface LevelParts {
  * Built by {@link option} or {@link fallback}; never by hand.
  */
 export interface OptionRubric {
+  /** Set only by {@link option} and {@link fallback}, so a lookalike built by hand is a type error. */
+  readonly [brand]: "option";
   /** Discriminant, so `levels()` rejects this by type. */
   readonly rubric: "option";
   /** What this option means. Used verbatim: never trimmed, never re-punctuated. */
@@ -58,6 +67,8 @@ export interface OptionRubric {
  * bare string; never by hand.
  */
 export interface LevelRubric {
+  /** Set only by {@link level}, so a lookalike built by hand is a type error. */
+  readonly [brand]: "level";
   /** Discriminant, so an {@link OptionRubric} is a type error in a level position. */
   readonly rubric: "level";
   /** What this level means. Used verbatim. */
@@ -87,6 +98,7 @@ const clause = (
  */
 export const option = (what: string, parts?: OptionParts): OptionRubric =>
   Object.freeze({
+    [brand]: "option" as const,
     rubric: "option",
     what,
     examples: Object.freeze(clause(parts?.examples, "example")),
@@ -102,12 +114,21 @@ export const fallback = (what: string, parts?: OptionParts): OptionRubric =>
  * Describe a level. There is no `counterexamples` parameter: a level is a position on an
  * ordered scale, not an option to rule out.
  */
-export const level = (what: string, parts?: LevelParts): LevelRubric =>
-  Object.freeze({
+export const level = (what: string, parts?: LevelParts): LevelRubric => {
+  // The type forbids counterexamples; this is for a JavaScript caller, whose would otherwise be
+  // dropped without a word. Rule 10, the same refusal `renderLevels` makes for a laundered value.
+  if (parts !== undefined && "counterexamples" in parts) {
+    throw configError(
+      `a counterexample is not allowed on level ${JSON.stringify(what)}; a level is a position on a scale, not an option to rule out`,
+    );
+  }
+  return Object.freeze({
+    [brand]: "level" as const,
     rubric: "level",
     what,
     examples: Object.freeze(clause(parts?.examples, "example")),
   });
+};
 
 /** A bare string is a rubric with no parts. */
 export const asLevelRubric = (v: string | LevelRubric): LevelRubric =>

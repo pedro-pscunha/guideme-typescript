@@ -170,6 +170,13 @@ test.each([
   // The thirteenth row is not a rubric rule but the declaration rule that sits beside them,
   // and it is runtime because there is no type-level count of marked values.
   {
+    rule: 10,
+    name: "a counterexample handed to level() by a JavaScript caller",
+    contract: "a counterexample on a level, since an ordered scale has no 'not this option'",
+    build: (): unknown =>
+      level("high", { counterexamples: ["a typo"] } as unknown as Parameters<typeof level>[1]),
+  },
+  {
     rule: 13,
     name: "two fallback() values in one choice()",
     contract: "the unsure ladder has one rung to fall to, so a choice has at most one fallback",

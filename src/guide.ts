@@ -1,4 +1,4 @@
-import { configError, protocolError } from "./errors.js";
+import { GuidemeError, configError, protocolError } from "./errors.js";
 import { over, resolve, settle } from "./policy.js";
 import type { Policy } from "./policy.js";
 import { ApiKey, LATEST_MODEL, model } from "./scalars.js";
@@ -66,7 +66,7 @@ const modelFromEnv = (): Model | undefined => {
  */
 const ownClient = (options: GuideOptions): Client => {
   // The type already demands a key. This is for a JavaScript caller, who can pass anything.
-  if (!(options.apiKey instanceof ApiKey)) throw configError("api_key is required");
+  if (!(options.apiKey instanceof ApiKey)) throw configError("apiKey is required");
   return createClient({
     apiKey: options.apiKey,
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
@@ -77,36 +77,33 @@ const ownClient = (options: GuideOptions): Client => {
   });
 };
 
-/** A non-null object, including an array, viewed as the record its fields form. */
-const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> =>
-  typeof v === "object" && v !== null;
-
 /**
- * Serialise the caller's state once, refusing what JSON would silently corrupt.
+ * `JSON.stringify`'s replacer, refusing what JSON would silently corrupt. `JSON.stringify(NaN)`
+ * is `"null"`, which the API reads as an absent field, so a non-finite number is refused
+ * before the encoder can substitute. Loud beats silent.
  *
- * `JSON.stringify(NaN)` is `"null"`, which the API reads as an absent field, so the walk
- * refuses a non-finite number before the encoder can substitute. Loud beats silent.
+ * A replacer, not a walk ahead of the encoder: it sees each value after `toJSON` has run, so a
+ * class that hides a NaN field is fine, and it has no memory of what it has seen, so a value
+ * shared by two fields is not mistaken for a cycle. A real cycle is the encoder's own
+ * `TypeError`, which the caller turns into the same `config` error.
  */
+const refuseUnrepresentable = (_key: string, value: unknown): unknown => {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw configError(`state is not serialisable: ${String(value)} has no JSON representation`);
+  }
+  if (typeof value === "bigint") {
+    throw configError("state is not serialisable: a bigint has no JSON representation");
+  }
+  return value;
+};
+
+/** Serialise the caller's state once. `undefined` at the top level is sent as `null`. */
 const encodeState = (state: unknown): string => {
-  const seen = new WeakSet<object>();
-  const check = (v: unknown): void => {
-    if (typeof v === "number" && !Number.isFinite(v)) {
-      throw configError(`state is not serialisable: ${String(v)} has no JSON representation`);
-    }
-    if (typeof v === "bigint") {
-      throw configError("state is not serialisable: a bigint has no JSON representation");
-    }
-    if (isRecord(v)) {
-      if (seen.has(v)) throw configError("state is not serialisable: it contains a cycle");
-      seen.add(v);
-      for (const entry of Object.values(v)) check(entry);
-    }
-  };
-  check(state);
   let json: string | undefined;
   try {
     json = stringified(state);
   } catch (e) {
+    if (e instanceof GuidemeError) throw e;
     throw configError(`state is not serialisable: ${String(e)}`);
   }
   return json ?? "null";
@@ -117,7 +114,7 @@ const encodeState = (state: unknown): string => {
  * `JSON.stringify(undefined)` really is `undefined`, and this is what makes the caller's
  * fallback a check rather than dead code.
  */
-const stringified = (v: unknown): string | undefined => JSON.stringify(v);
+const stringified = (v: unknown): string | undefined => JSON.stringify(v, refuseUnrepresentable);
 
 /**
  * A configured entry point to Jev.
