@@ -15,3 +15,20 @@ export {
 } from "./scalars.js";
 export { type Policy, type Thresholds, type Verdict } from "./policy.js";
 export { fallback, level, option, type LevelRubric, type OptionRubric } from "./rubric.js";
+export {
+  choice,
+  chooseAmong,
+  choose,
+  levels,
+  noul,
+  score,
+  scoreLevels,
+  type ChoiceQuestion,
+  type Level,
+  type NoulQuestion,
+  type Option,
+  type Question,
+  type Ranked,
+  type ScoreQuestion,
+  type Scored,
+} from "./question.js";
