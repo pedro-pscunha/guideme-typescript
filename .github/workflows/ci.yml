@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The repository is public and nothing here publishes, comments or deploys.
+permissions:
+  contents: read
+
+# Supersede in-flight PR runs; never cancel a run for a commit on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The whole gate, on the floor this package claims and on the current LTS. The matrix
+  # value is in the job name on purpose: a static name would give both legs the same check
+  # and the ruleset would see one required check instead of two.
+  gate:
+    name: gate (${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # mise.toml pins node for local work. Left enabled, mise-action would install that pin and
+    # put it ahead of setup-node on PATH, and both legs would run the same node whatever the
+    # matrix says. Disabling it here leaves node to setup-node, which is the matrix's job.
+    env:
+      MISE_DISABLE_TOOLS: node
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "lts/*"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # mise.toml is the single source of truth for gitleaks and bun. Nothing is re-pinned
+      # here; the node version above is the one thing the matrix owns.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - name: the node this leg runs
+        run: node -v
+
+      - name: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile
+
+      # prettier, eslint, tsc, fallow, vitest (with --typecheck), build, publint, attw, audit.
+      # The live tests need TYPESAFE_API_KEY and LIVE=1; CI sets neither, so they report
+      # skipped.
+      - name: mise run check
+        run: mise run check
+
+  # The same suite under Bun, which is a different fetch, a different timer and a different
+  # Response. Everything this package does at the wire is runtime-visible, so this is not a
+  # duplicate of the gate. `--bun` is what makes it Bun: vitest's bin starts with a node
+  # shebang, and `bun run` honours it, so without the flag this job would run the suite on the
+  # runner's Node a second time.
+  bun:
+    name: bun
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      - name: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile
+      - name: bun --bun run vitest run
+        run: bun --bun run vitest run
+
+  # The tracked pre-commit and pre-push hooks scan for secrets, but a hook is opt-in and
+  # local. This is the copy that runs on every pull request, fork included, and on every
+  # commit that reaches main.
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history: a secret on any commit is a leak, however old.
+          fetch-depth: 0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      # Exit 2 is a leak, exit 1 is gitleaks failing to run. Both fail the job.
+      - name: gitleaks over the full history
+        run: gitleaks git --no-banner --redact --exit-code 2
+
+  # examples/otlp is its own package with its own lock file, and the root tsconfig and eslint
+  # config do not reach it either, so the root gate only formats it. This job is the one that
+  # type-checks it, lints it and runs it. --frozen-lockfile is the point: it fails when the
+  # library moves under the example instead of silently resolving around it.
+  example:
+    name: example
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - name: build the library the example links
+        run: bun install --frozen-lockfile && mise run build
+      - name: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile
+        working-directory: examples/otlp
+      # tsc --noEmit against the example's own tsconfig, then eslint against the example's own
+      # flat config. One mise task so the local command and this job cannot disagree.
+      - name: mise run example
+        run: mise run example
+      - name: run it against a collector-less endpoint
+        run: node --experimental-strip-types src/main.ts --dry-run
+        working-directory: examples/otlp
+
+  # `engines.node >= 22` is a promise to consumers. This is the job that keeps it honest:
+  # it installs the floor, builds the package and imports it there.
+  min-node:
+    name: min-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.0.0"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      - name: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile
+      - name: build and assert the engines floor agrees with this job
+        run: |
+          set -euo pipefail
+          claimed="$(node -p 'require("./package.json").engines.node')"
+          echo "package.json claims engines.node = ${claimed}; this job runs $(node -v)"
+          case "${claimed}" in
+            ">=22") ;;
+            *) echo "::error::this job pins 22.0.0 but package.json claims ${claimed}"; exit 1 ;;
+          esac
+          bun run tsc -p tsconfig.build.json
+      - name: import the built package on the floor
+        run: node -e "import('./dist/index.js').then(m => { if (typeof m.Guide !== 'function') { process.exit(1); } console.log('imported on', process.version); })"
+
+  # spec/ is vendored from guideme-rust and is the cross-SDK contract. A change lands there,
+  # not here. This is the per-PR copy; spec-drift.yml is the weekly one.
+  spec-drift:
+    name: spec-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - name: mise run spec-check
+        run: mise run spec-check
