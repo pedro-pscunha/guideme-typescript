@@ -13,3 +13,4 @@ export {
   type Probability,
   type Rank,
 } from "./scalars.js";
+export { type Policy, type Thresholds, type Verdict } from "./policy.js";
