@@ -11,8 +11,13 @@ levels
 noul
 score
 scoreLevels
+type ChoiceDescriptor
 type ChoiceQuestion
+type DetailedChoiceQuestion
+type DetailedNoulQuestion
+type DetailedScoreQuestion
 type Level
+type LevelsDescriptor
 type NoulQuestion
 type Option
 type Question
@@ -38,3 +43,4 @@ type Probability
 type Rank
 GuidemeError
 type ErrorKind
+type GuidemeErrorOptions

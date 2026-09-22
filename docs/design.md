@@ -54,10 +54,11 @@ Each module survives the test.
   — which carries `with` and the threshold setters and nothing else. `readAnswer` dispatches on
   `detailed` before it looks at a fallback, so a value set after `.detail()` would be discarded
   without a word, and Rust says the same thing by not implementing `Fallible` for `Detailed<K>`.
-  The three are exported from `src/question.ts` for `src/ask.ts` and are not re-exported from
-  `src/index.ts`, so the surface stays at thirteen values and twenty-three types; a caller meets
-  one only as `detail()`'s return type. They are parameterised by the **answer** rather than by
-  the key, because that is the type argument `Answered` reads straight back off the reference.
+  The three are re-exported from `src/index.ts`, with `ChoiceDescriptor`, `LevelsDescriptor` and
+  `GuidemeErrorOptions`, so a caller annotating a function names them instead of spelling
+  `ReturnType<..>` or `Parameters<..>`, which would otherwise become the de facto API. They are
+  parameterised by the **answer** rather than by the key, because that is the type argument
+  `Answered` reads straight back off the reference.
 - **Two rubric types where Rust has one.** Rust's `Rubric` is a single struct used in every
   rubric position, and "a level carries no counterexample" is a check inside `render_levels`
   plus a compile error inside `#[derive(Levels)]`. Here `option(..)` returns an `OptionRubric`

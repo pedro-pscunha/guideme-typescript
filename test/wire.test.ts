@@ -9,6 +9,7 @@ import responseJson from "../spec/schema/response.json" with { type: "json" };
 import { closedPort, startServer } from "./support/server.js";
 import { BAD_NOUL_AS_Q0, NOUL_AS_Q0 } from "./support/fixtures.js";
 import { ApiKey, Guide, choice, choose, levels, noul, option, score } from "../src/index.js";
+import type { ChoiceDescriptor } from "../src/index.js";
 import { createClient } from "../src/api/client.js";
 import type { Client } from "../src/api/client.js";
 import { model } from "../src/scalars.js";
@@ -433,7 +434,7 @@ test("unsure with no fallback names the question; an empty batch is a config err
   // — is refused when its keys and rubrics disagree, not padded with `null`: `null` means
   // "described not at all", and inventing that would put a bare key on the wire nobody wrote.
   // Built through `unknown` because the brand is what makes it a type error.
-  type Descriptor = Parameters<typeof choose>[0];
+  type Descriptor = ChoiceDescriptor<string>;
   const handBuilt = (keys: readonly string[], rubrics: readonly unknown[]): Descriptor =>
     ({ descriptor: "choice", keys, rubrics, fallbackKey: undefined }) as unknown as Descriptor;
   await expect(

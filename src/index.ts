@@ -14,8 +14,13 @@ export {
   noul,
   score,
   scoreLevels,
+  type ChoiceDescriptor,
   type ChoiceQuestion,
+  type DetailedChoiceQuestion,
+  type DetailedNoulQuestion,
+  type DetailedScoreQuestion,
   type Level,
+  type LevelsDescriptor,
   type NoulQuestion,
   type Option,
   type Question,
@@ -34,4 +39,4 @@ export {
   type Probability,
   type Rank,
 } from "./scalars.js";
-export { GuidemeError, type ErrorKind } from "./errors.js";
+export { GuidemeError, type ErrorKind, type GuidemeErrorOptions } from "./errors.js";

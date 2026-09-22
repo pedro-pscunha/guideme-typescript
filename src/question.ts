@@ -45,7 +45,7 @@ const keysOf = <S extends object>(spec: S): Extract<keyof S, string>[] =>
 type Instructions = string | Readonly<Record<string, unknown>>;
 
 /** An ordered set of options, declared once and reused. Built by {@link choice}. */
-interface ChoiceDescriptor<K extends string> {
+export interface ChoiceDescriptor<K extends string> {
   /** Set only by {@link choice}, so a lookalike built by hand is a type error. */
   readonly [brand]: "choice";
   /** Discriminant. */
@@ -136,8 +136,11 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
   });
 };
 
-/** An ordered scale, declared once. Declaration order is level order, low to high. */
-interface LevelsDescriptor<K extends string> {
+/**
+ * An ordered scale, declared once. Declaration order is level order, low to high. Built by
+ * {@link levels}.
+ */
+export interface LevelsDescriptor<K extends string> {
   /** Set only by {@link levels}, so a lookalike built by hand is a type error. */
   readonly [brand]: "levels";
   /** Discriminant. */
@@ -240,15 +243,17 @@ export interface ScoreQuestion<K extends string, Out = K> {
 // A question asked for its full reading has NO `or`, and that is the whole point of these
 // three interfaces. `readAnswer` dispatches on `detailed` before it looks at a fallback, so a
 // value set after `.detail()` would be silently discarded; Rust says the same thing by not
-// implementing `Fallible` for `Detailed<K>`. They are exported for `src/ask.ts`, which needs
-// them in `Shape` and `Answered`, and are NOT re-exported from `src/index.ts`: a caller meets
-// one only as the return type of `detail()`, which is why the public surface stays at thirteen
-// values and twenty-three types.
+// implementing `Fallible` for `Detailed<K>`. `src/ask.ts` needs them in `Shape` and `Answered`,
+// and `src/index.ts` re-exports them so a caller annotating a function that returns one writes
+// its name rather than `ReturnType<NoulQuestion["detail"]>`.
 //
 // The choice and score ones are parameterised by the ANSWER rather than by the key, because
 // that is the type argument `Answered` reads straight back off the reference.
 
-/** A noul asked for its full reading. Answers {@link Verdict}. */
+/**
+ * A noul asked for its full reading: what `.detail()` returns. Answers {@link Verdict}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedNoulQuestion {
   /** Discriminant. */
   readonly kind: "noul";
@@ -262,7 +267,10 @@ export interface DetailedNoulQuestion {
   criteria(yes: string | OptionRubric, no: string | OptionRubric): DetailedNoulQuestion;
 }
 
-/** A choice asked for its full reading. Answers {@link Ranked}. */
+/**
+ * A choice asked for its full reading: what `.detail()` returns. Answers {@link Ranked}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedChoiceQuestion<Out> {
   /** Discriminant. */
   readonly kind: "choice";
@@ -272,7 +280,10 @@ export interface DetailedChoiceQuestion<Out> {
   minConfidence(c: number): DetailedChoiceQuestion<Out>;
 }
 
-/** A score asked for its full reading. Answers {@link Scored}. */
+/**
+ * A score asked for its full reading: what `.detail()` returns. Answers {@link Scored}, never
+ * fails on unsure, and has no `or`.
+ */
 export interface DetailedScoreQuestion<Out> {
   /** Discriminant. */
   readonly kind: "score";

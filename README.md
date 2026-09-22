@@ -225,6 +225,12 @@ missed. `.detail()` skips the ladder and hands you the reading to decide yoursel
 it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does not compile,
 rather than compiling and discarding `x`.
 
+Every type you can reach is exported by name, so a signature never has to spell
+`ReturnType<..>`: `.detail()` returns a `DetailedNoulQuestion`, a
+`DetailedChoiceQuestion<Ranked<K>>` or a `DetailedScoreQuestion<Scored<K>>`, and `choice` and
+`levels` return a `ChoiceDescriptor<K>` and a `LevelsDescriptor<K>`. Naming a descriptor does
+not let you build one: it still has to come from `choice` or `levels`.
+
 A **runtime** choice has two rungs, not three. `chooseAmong` answers a `Key`, and there is no
 descriptor to carry a marked option, so handing it a `fallback()` value is a `config` error
 naming the rule. Use `.or(key)`.
@@ -322,7 +328,9 @@ environment variables that point the exporter anywhere, and console and OTLP set
 
 ## Errors
 
-One class, `GuidemeError`, for everything, discriminated by `kind`:
+One class, `GuidemeError`, for everything, discriminated by `kind`. Its constructor is public,
+with its third argument typed `GuidemeErrorOptions`, so a test double can throw the class you
+branch on:
 
 | `kind`              | When                                                                                                                                                     |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -19,13 +19,20 @@ import {
   option,
   score,
   scoreLevels,
+  type ChoiceDescriptor,
   type ChoiceQuestion,
   type Confidence,
+  type DetailedChoiceQuestion,
+  type DetailedNoulQuestion,
+  type DetailedScoreQuestion,
   type ErrorKind,
   type GuideOptions,
+  type GuidemeError,
+  type GuidemeErrorOptions,
   type Key,
   type Level,
   type LevelRubric,
+  type LevelsDescriptor,
   type Model,
   type ModelInfo,
   type NoulQuestion,
@@ -156,6 +163,23 @@ test("probabilities, confidences and model names are branded where the wire pars
   expectTypeOf<ModelInfo["name"]>().toEqualTypeOf<Model>();
 });
 
+test("the types a constructor or a method returns are named, not reached through ReturnType", () => {
+  // Each of these was once nameable only as `ReturnType<..>` or `Parameters<..>`, and a caller
+  // annotating a function would have made that spelling the de facto API.
+  expectTypeOf(Department).toEqualTypeOf<ChoiceDescriptor<Department>>();
+  expectTypeOf(Frustration).toEqualTypeOf<LevelsDescriptor<Frustration>>();
+  expectTypeOf(noul("a").detail()).toEqualTypeOf<DetailedNoulQuestion>();
+  expectTypeOf(choose(Department, "a").detail()).toEqualTypeOf<
+    DetailedChoiceQuestion<Ranked<Department>>
+  >();
+  expectTypeOf(score(Frustration, "a").detail()).toEqualTypeOf<
+    DetailedScoreQuestion<Scored<Frustration>>
+  >();
+  expectTypeOf<ConstructorParameters<typeof GuidemeError>[2]>().toEqualTypeOf<
+    GuidemeErrorOptions | undefined
+  >();
+});
+
 test("askWithReceipt wraps every shape", async () => {
   expectTypeOf(await guide.askWithReceipt(noul("a"), ticket)).toEqualTypeOf<Receipt<boolean>>();
   expectTypeOf(
@@ -178,13 +202,19 @@ test("askWithReceipt wraps every shape", async () => {
  * naming it here would not compile.
  */
 type ExportedTypes = [
+  ChoiceDescriptor<Department>,
   ChoiceQuestion<Department>,
   Confidence,
+  DetailedChoiceQuestion<Ranked<Department>>,
+  DetailedNoulQuestion,
+  DetailedScoreQuestion<Scored<Frustration>>,
   ErrorKind,
   GuideOptions,
+  GuidemeErrorOptions,
   Key,
   Level<typeof Frustration>,
   LevelRubric,
+  LevelsDescriptor<Frustration>,
   Model,
   ModelInfo,
   NoulQuestion,
@@ -204,7 +234,7 @@ type ExportedTypes = [
 ];
 
 test("the exported TYPE surface is exactly this list", () => {
-  expectTypeOf<ExportedTypes["length"]>().toEqualTypeOf<23>();
+  expectTypeOf<ExportedTypes["length"]>().toEqualTypeOf<29>();
   expectTypeOf<ErrorKind>().toEqualTypeOf<
     | "auth"
     | "invalid"
@@ -225,7 +255,7 @@ type ZodShaped = {
 
 test("no exported type is a zod schema type", () => {
   // Per member, not over the union: a union is assignable to `ZodType` only when every member
-  // is, so `.not` on the union would pass with twenty-two of twenty-three zod-shaped. The gate
+  // is, so `.not` on the union would pass with twenty-eight of twenty-nine zod-shaped. The gate
   // also refuses a `zod` reference in `dist/index.d.ts` itself, after the build.
   expectTypeOf<ZodShaped>().toEqualTypeOf<never>();
   expectTypeOf<Receipt<boolean>["usage"]>().toEqualTypeOf<{
@@ -291,6 +321,16 @@ test("illegal states are compiler errors", () => {
 
   // @ts-expect-error a descriptor comes from choice(); a lookalike built by hand has no brand
   choose({ descriptor: "choice", keys: ["a", "b"], rubrics: [], fallbackKey: undefined }, "Which?");
+
+  // Naming the descriptor type does not make a lookalike legal: the brand is still unwritable.
+  // @ts-expect-error a value annotated ChoiceDescriptor still has to come from choice()
+  const named: ChoiceDescriptor<"a" | "b"> = {
+    descriptor: "choice",
+    keys: ["a", "b"],
+    rubrics: [],
+    fallbackKey: undefined,
+  };
+  expectTypeOf(named).toEqualTypeOf<ChoiceDescriptor<"a" | "b">>();
 
   // @ts-expect-error a rubric comes from option(); a lookalike built by hand has no brand
   choice({
