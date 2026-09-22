@@ -387,7 +387,7 @@ test("a malformed body and an option outside the rubric are both protocol errors
 /** One named scenario of a table case, so a failure reports the scenario that broke. */
 interface Scenario {
   readonly name: string;
-  readonly run: () => Promise<void>;
+  readonly run: () => void | Promise<void>;
 }
 
 /** A guide whose server answers every request with a noul of exactly 0.5. */
@@ -468,7 +468,6 @@ const configAndUnsure: readonly Scenario[] = [
           `${JSON.stringify(bad)} is refused when the guide is built`,
         ).toThrow(expect.objectContaining({ kind: "config" }));
       }
-      return Promise.resolve();
     },
   },
   {
@@ -478,7 +477,6 @@ const configAndUnsure: readonly Scenario[] = [
         new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 2 ** 31 - 1 }),
         "zero retries, zero backoff and the largest deadline a timer can hold are all legal",
       ).toBeInstanceOf(Guide);
-      return Promise.resolve();
     },
   },
   {

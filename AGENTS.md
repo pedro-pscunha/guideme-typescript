@@ -158,6 +158,12 @@ outside the 40; row 40 is `#[ignore]`-equivalent and never runs in the gate.
 Split unrelated behaviours into named rows of a `test.each` table instead of bundling them into
 one `test()` body: the table still counts once, and a failure names the scenario that broke.
 
+What vitest reports is a different number: **145** today, 143 run and 2 skipped (the live
+rows), because it counts every `test.each` row plus the 13 type-level cases in
+`test/typing.test-d.ts`. A `test.each` over closures — the `Scenario` tables in
+`test/wire.test.ts` — counts once under the rule above, which Pedro approved. Whether a table of
+closures should count per row instead is an open question held for him.
+
 A new case must be one of:
 
 - a property test (`fast-check`) over a law of `resolve` or of the renderer;
