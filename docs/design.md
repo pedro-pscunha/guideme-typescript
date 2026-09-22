@@ -160,6 +160,20 @@ Each module survives the test.
   major bump a patch here rather than a breaking change for everyone — the opposite of the
   trade Rust makes with `reqwest` — and it is checked twice: `test/typing.test-d.ts` pins
   `Receipt["usage"]` structurally, and the package proof greps `dist/index.d.ts` for `zod`.
+- **`@opentelemetry/api` is a required peer; `zod` is a caret dependency.** The API is a
+  process-wide singleton. As an exact regular dependency (`1.9.1`) it made two copies the
+  normal case in an application, and an application on API `1.8` or older then got no spans
+  and no warning. As a peer, the application's copy is the one this package uses, and an
+  incompatible version is the installer's business: npm refuses the install (`ERESOLVE`) when
+  the application's API does not satisfy `^1.9.0`; bun and pnpm warn, then use the
+  application's copy. The peer is required, with no `peerDependenciesMeta`, because
+  `src/telemetry.ts` imports the API at load and an absent optional peer would crash there.
+  The floor is `1.9.0` and the dev copy is pinned there, so the gate tests the floor rather
+  than whatever is newest. `zod` never reaches the public surface, so it stays a regular
+  dependency, but a caret: an exact pin forces a second copy on every application that uses
+  another 4.x. The lock pins what the gate builds; the non-required `latest-deps (unpinned)`
+  job installs the newest `zod` 4.x and API 1.x over it and runs the suite, so a new release in
+  range is tested before a user meets it.
 - **The `util.inspect` hook is installed on `ApiKey.prototype`, not written in the class body.**
   `console.log` and `util.inspect` read `Symbol.for("nodejs.util.inspect.custom")`, and
   `Symbol.for(..)` does not produce a `unique symbol`, so `isolatedDeclarations` cannot name it

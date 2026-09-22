@@ -34,6 +34,39 @@ description = "The suite under the Bun runtime, which is what the `bun` CI job r
 # without the flag this would run the suite on Node a second time.
 run = "bun --bun run vitest run"
 
+[tasks.latest-deps]
+description = "The suite against the newest zod 4.x and @opentelemetry/api 1.x, not the lock's"
+# The `latest-deps (unpinned)` CI job, which is not a required check. `bun.lock` pins what the
+# gate builds, but a consumer resolves `zod@^4.6.5` and the `@opentelemetry/api@^1.9.0` peer
+# to whatever is newest, so this is the run that sees a new release first. `bun add` with a
+# range keeps whatever the lock already has, so each newest version is asked of the registry
+# and installed exactly. `--no-save` leaves package.json and bun.lock untouched; run
+# `bun install` afterwards to put node_modules back on the lock.
+shell = "bash -c"
+run = '''
+set -euo pipefail
+newest() {
+  npm view "$1" version --json | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      const v = JSON.parse(s);
+      const all = Array.isArray(v) ? v : [v];
+      const key = (x) => x.split(".").map(Number);
+      all.sort((a, b) => { const [p, q] = [key(a), key(b)]; return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; });
+      console.log(all.at(-1));
+    });'
+}
+zod="$(newest 'zod@^4')"
+api="$(newest '@opentelemetry/api@^1')"
+bun add --no-save "zod@${zod}" "@opentelemetry/api@${api}"
+for name in zod @opentelemetry/api; do
+  locked="$(grep -o "\"${name}\": \[\"${name}@[^\"]*\"" bun.lock | sed 's/.*@//; s/"$//')"
+  resolved="$(node -p "require('./node_modules/${name}/package.json').version")"
+  echo "${name}: the lock pins ${locked}, this run resolved ${resolved}"
+done
+bun run vitest run --typecheck
+'''
+
 [tasks.secrets]
 description = "gitleaks over the whole history, which is what the `secrets` CI job runs"
 # Exit 2 is a leak; exit 1 is gitleaks failing to run. Both fail the task.

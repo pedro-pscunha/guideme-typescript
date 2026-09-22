@@ -25,6 +25,9 @@ The first release. It ships the whole guideme 0.2.0 contract, as published by
 - The 0.2.0 retry policy on both `POST /v1/systemone` and `GET /v1/models`.
 - `fetch` injection, so a caller's code is testable with no server.
 - OpenTelemetry spans and events under the names in `docs/observability.md`.
+- `@opentelemetry/api` as a required peer dependency, `^1.9.0`, and `zod` as `^4.6.5`. npm
+  refuses the install (`ERESOLVE`) when the application's API does not satisfy `^1.9.0`; bun
+  and pnpm warn, then use the application's copy.
 - Type exports for everything a signature can reach: `ChoiceDescriptor`, `LevelsDescriptor`,
   `DetailedNoulQuestion`, `DetailedChoiceQuestion`, `DetailedScoreQuestion`,
   `GuidemeErrorOptions`, `Shape`, `Answered`, `Instructions`, `OptionParts` and `LevelParts`,

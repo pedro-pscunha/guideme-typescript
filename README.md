@@ -141,12 +141,15 @@ a plain pair of strings keeps working unchanged.
 ## Install
 
 ```sh
-npm install @guideme/sdk
+npm install @guideme/sdk @opentelemetry/api
 ```
 
 Node 22 or newer, or any runtime with `fetch`. The package is ESM only and ships its own
-types. Its two runtime dependencies are `zod` and `@opentelemetry/api`, and neither appears on
-the public surface.
+types. `@opentelemetry/api` is a peer dependency: name it yourself, because npm installs a peer
+but does not add it to your `package.json`, and your own tracing setup imports it. If your
+application already has an API older than `1.9`, npm refuses the install (`ERESOLVE`); bun and
+pnpm warn, then use your copy. The one runtime dependency is `zod`. Neither appears on the
+public surface.
 
 Set `TYPESAFE_API_KEY` in the environment, or pass a key to `new Guide({ apiKey })`.
 

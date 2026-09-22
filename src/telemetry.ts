@@ -14,9 +14,8 @@ import type { Outcome, Thresholds } from "./policy.js";
  * Resolved per span rather than once at import. `trace.getTracer` reads the registered
  * provider off `globalThis` at call time, so a tracer taken here finds the application's
  * provider even when the application and this package resolve two different copies of
- * `@opentelemetry/api` — which happens whenever the application's version differs from the
- * exact `1.9.1` this package depends on, or its installer does not deduplicate the two. A
- * tracer cached at import cannot: it is a `ProxyTracer` bound to this copy's own
+ * `@opentelemetry/api`. The API is a peer, so that is the exception, but it happens: bun gives a
+ * `file:` dependency its own development `node_modules`. A tracer cached at import cannot: it is a `ProxyTracer` bound to this copy's own
  * `ProxyTracerProvider`, and the application's `register()` sets the delegate on the other
  * copy's, leaving this one a no-op for the life of the process. Measured in `examples/otlp`,
  * which has two copies: with the tracer cached, one span reached the collector; with it
