@@ -4,5 +4,12 @@
  * Everything the package offers is exported from this file and nowhere else.
  */
 
-/** The version of the guideme contract this package implements. */
-export const CONTRACT_VERSION = "0.2.0";
+export { GuidemeError, type ErrorKind } from "./errors.js";
+export {
+  ApiKey,
+  type Confidence,
+  type Key,
+  type Model,
+  type Probability,
+  type Rank,
+} from "./scalars.js";
