@@ -41,8 +41,19 @@ const isOwnKey = <S extends object>(spec: S, k: string): k is Extract<keyof S, s
 const keysOf = <S extends object>(spec: S): Extract<keyof S, string>[] =>
   Object.keys(spec).filter((k) => isOwnKey(spec, k));
 
+/**
+ * The key a question's answer type is carried under, in the type only.
+ *
+ * `Out` otherwise appears only in `or`'s parameter and in the recursive return types, so it
+ * was a free label: `DetailedChoiceQuestion<number>` accepted a real `.detail()`, and a choice
+ * over one key set passed for a choice over another. An optional member typed `Out` makes the
+ * parameter structural and covariant. No value ever carries it, and this symbol is not
+ * exported, so no caller can write one either.
+ */
+declare const answer: unique symbol;
+
 /** What a question is asked about: text, or a structured object holding it. */
-type Instructions = string | Readonly<Record<string, unknown>>;
+export type Instructions = string | Readonly<Record<string, unknown>>;
 
 /** An ordered set of options, declared once and reused. Built by {@link choice}. */
 export interface ChoiceDescriptor<K extends string> {
@@ -198,6 +209,8 @@ export const levels = <const S extends Readonly<Record<string, string | LevelRub
 export interface NoulQuestion<Out = boolean> {
   /** Discriminant. */
   readonly kind: "noul";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): NoulQuestion<Out>;
   /** `p \>= yesAbove` is yes. */
@@ -216,6 +229,8 @@ export interface NoulQuestion<Out = boolean> {
 export interface ChoiceQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "choice";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ChoiceQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -230,6 +245,8 @@ export interface ChoiceQuestion<K extends string, Out = K> {
 export interface ScoreQuestion<K extends string, Out = K> {
   /** Discriminant. */
   readonly kind: "score";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): ScoreQuestion<K, Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -274,6 +291,8 @@ export interface DetailedNoulQuestion {
 export interface DetailedChoiceQuestion<Out> {
   /** Discriminant. */
   readonly kind: "choice";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedChoiceQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -287,6 +306,8 @@ export interface DetailedChoiceQuestion<Out> {
 export interface DetailedScoreQuestion<Out> {
   /** Discriminant. */
   readonly kind: "score";
+  /** Never set. Carries the answer type, so two questions answering different types differ. */
+  readonly [answer]?: Out;
   /** Merge a policy patch over this question's. */
   with(policy: Policy): DetailedScoreQuestion<Out>;
   /** `confidence \< minConfidence` is unsure. */
@@ -373,6 +394,8 @@ interface NoulState<Out> {
 
 class NoulImpl<Out> {
   readonly kind = "noul" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: NoulState<Out>;
 
   constructor(s: NoulState<Out>) {
@@ -481,6 +504,8 @@ interface ChoiceState<K extends string, Out> {
 
 class ChoiceImpl<K extends string, Out> {
   readonly kind = "choice" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: ChoiceState<K, Out>;
 
   constructor(s: ChoiceState<K, Out>) {
@@ -592,6 +617,8 @@ interface ScoreState<K extends string, Out> {
 
 class ScoreImpl<K extends string, Out> {
   readonly kind = "score" as const;
+  /** Type only, never set: the interfaces carry it, so a strict-subtype narrowing does too. */
+  declare readonly [answer]?: Out;
   readonly #s: ScoreState<K, Out>;
 
   constructor(s: ScoreState<K, Out>) {

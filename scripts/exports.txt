@@ -4,6 +4,8 @@
 
 Guide
 type GuideOptions
+type Answered
+type Shape
 choice
 choose
 chooseAmong
@@ -16,6 +18,7 @@ type ChoiceQuestion
 type DetailedChoiceQuestion
 type DetailedNoulQuestion
 type DetailedScoreQuestion
+type Instructions
 type Level
 type LevelsDescriptor
 type NoulQuestion
@@ -27,7 +30,9 @@ type Scored
 fallback
 level
 option
+type LevelParts
 type LevelRubric
+type OptionParts
 type OptionRubric
 type Policy
 type Thresholds

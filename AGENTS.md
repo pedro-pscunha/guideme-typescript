@@ -9,7 +9,7 @@ A TypeScript package that makes a TypeSafe Jev judgment usable as control flow: 
 npm as `@guideme/sdk` under `MIT OR Apache-2.0`, ESM only.
 
 The public surface is what `src/index.ts` re-exports, and nothing else: thirteen values and
-twenty-nine types. `test/surface.test.ts` pins the values, `test/typing.test-d.ts` pins the
+thirty-four types. `test/surface.test.ts` pins the values, `test/typing.test-d.ts` pins the
 types, and `scripts/check-exports.mjs` holds the built `dist/index.d.ts` to the list in
 `scripts/exports.txt`, which is what notices a name being added. Anything removed or renamed in
 either is a breaking change for people who do not work here, so it needs a major bump and a

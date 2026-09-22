@@ -26,5 +26,8 @@ The first release. It ships the whole guideme 0.2.0 contract, as published by
 - `fetch` injection, so a caller's code is testable with no server.
 - OpenTelemetry spans and events under the names in `docs/observability.md`.
 - Type exports for everything a signature can reach: `ChoiceDescriptor`, `LevelsDescriptor`,
-  `DetailedNoulQuestion`, `DetailedChoiceQuestion`, `DetailedScoreQuestion` and
-  `GuidemeErrorOptions`, so a caller never has to spell `ReturnType<..>` or `Parameters<..>`.
+  `DetailedNoulQuestion`, `DetailedChoiceQuestion`, `DetailedScoreQuestion`,
+  `GuidemeErrorOptions`, `Shape`, `Answered`, `Instructions`, `OptionParts` and `LevelParts`,
+  so a caller never has to spell `ReturnType<..>` or `Parameters<..>`. A question type's
+  answer parameter is structural, so a `.detail()` or a question of one key set never passes
+  for another's.

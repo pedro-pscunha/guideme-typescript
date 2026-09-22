@@ -226,10 +226,17 @@ it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does
 rather than compiling and discarding `x`.
 
 Every type you can reach is exported by name, so a signature never has to spell
-`ReturnType<..>`: `.detail()` returns a `DetailedNoulQuestion`, a
-`DetailedChoiceQuestion<Ranked<K>>` or a `DetailedScoreQuestion<Scored<K>>`, and `choice` and
-`levels` return a `ChoiceDescriptor<K>` and a `LevelsDescriptor<K>`. Naming a descriptor does
-not let you build one: it still has to come from `choice` or `levels`.
+`ReturnType<..>`:
+
+- `.detail()` returns a `DetailedNoulQuestion`, a `DetailedChoiceQuestion<Ranked<K>>` or a
+  `DetailedScoreQuestion<Scored<K>>`.
+- `choice` and `levels` return a `ChoiceDescriptor<K>` and a `LevelsDescriptor<K>`.
+- `ask` takes a `Shape` and answers `Answered<S>`, so a wrapper can be generic the same way.
+- The constructors take `Instructions`; `option`, `fallback` and `level` take `OptionParts` and
+  `LevelParts`.
+
+A descriptor or a rubric cannot be written as an object literal: the brand is set only by
+`choice`, `levels`, `option`, `fallback` and `level`.
 
 A **runtime** choice has two rungs, not three. `chooseAmong` answers a `Key`, and there is no
 descriptor to carry a marked option, so handing it a `fallback()` value is a `config` error
