@@ -7,14 +7,11 @@ import modelsFixture from "./fixtures/models.json" with { type: "json" };
 import requestJson from "../spec/schema/request.json" with { type: "json" };
 import responseJson from "../spec/schema/response.json" with { type: "json" };
 import { closedPort, startServer } from "./support/server.js";
+import { BAD_NOUL_AS_Q0, NOUL_AS_Q0 } from "./support/fixtures.js";
 import { ApiKey, Guide, choice, choose, levels, noul, option, score } from "../src/index.js";
 import { createClient } from "../src/api/client.js";
 import type { Client } from "../src/api/client.js";
 import { model } from "../src/scalars.js";
-import noulQ0 from "./fixtures/noul-q0.json" with { type: "json" };
-import badNoulFixture from "./fixtures/bad-noul-q0.json" with { type: "json" };
-
-const NOUL_AS_Q0 = JSON.stringify(noulQ0);
 
 /** A non-null object, viewed as the record its fields form. */
 const isRecord = (v: unknown): v is Readonly<Record<string, { instructions?: unknown }>> =>
@@ -27,19 +24,34 @@ const questionsOf = (sent: unknown): Readonly<Record<string, { instructions?: un
   return isRecord(questions) ? questions : {};
 };
 
+// The models docs fixture, parsed once. It has one row and no table of its own to live in.
+const MODELS_PARSED = parseModels(modelsFixture);
+expect(MODELS_PARSED, "the models docs fixture lists exactly jev-latest").toEqual([
+  { name: "jev-latest", description: "The most recent stable release", release_date: "2026-08-01" },
+]);
+
 test.each([
-  { name: "noul", body: noulFixture },
-  { name: "choice", body: choiceFixture },
-  { name: "score", body: scoreFixture },
-])("the $name docs fixture parses and round-trips", ({ body }) => {
+  { name: "noul", body: noulFixture, inputTokens: 307 },
+  { name: "choice", body: choiceFixture, inputTokens: 318 },
+  { name: "score", body: scoreFixture, inputTokens: 304 },
+])("the $name docs fixture parses and round-trips", ({ body, inputTokens }) => {
   const parsed = parseResponse(body);
-  expect(JSON.parse(JSON.stringify(parsed))).toEqual(body);
-  expect(parsed.model).toBe("jev-1.13.0");
-  expect(parsed.usage.input_tokens).toBeGreaterThan(0);
-  const models = parseModels(modelsFixture);
-  expect(models).toHaveLength(1);
-  expect(models[0]?.name).toBe("jev-latest");
+  expect(JSON.parse(JSON.stringify(parsed)), "a docs response survives parsing unchanged").toEqual(
+    body,
+  );
+  expect(parsed.model, "model is the versioned id the docs example carries").toBe("jev-1.13.0");
+  expect(parsed.usage.input_tokens, "usage.input_tokens is read as the docs state it").toBe(
+    inputTokens,
+  );
 });
+
+/** Whether a JSON Schema, at any depth, states an array bound. Walked, not pattern-matched. */
+const hasArrayBound = (schema: unknown): boolean => {
+  if (Array.isArray(schema)) return schema.some(hasArrayBound);
+  if (typeof schema !== "object" || schema === null) return false;
+  if ("minItems" in schema || "maxItems" in schema) return true;
+  return Object.values(schema).some(hasArrayBound);
+};
 
 test("probabilities are range-checked at parse time and unknown fields are ignored", () => {
   const bad = (noul: number): unknown => ({
@@ -48,21 +60,31 @@ test("probabilities are range-checked at parse time and unknown fields are ignor
     usage: { input_tokens: 1, output_tokens: 1 },
   });
   for (const value of [1.5, -0.1, Number.NaN, Number.POSITIVE_INFINITY]) {
-    expect(() => parseResponse(bad(value))).toThrow(expect.objectContaining({ kind: "protocol" }));
+    expect(() => parseResponse(bad(value)), `a noul of ${String(value)} is outside 0..=1`).toThrow(
+      expect.objectContaining({ kind: "protocol" }),
+    );
   }
   // An integer `0` on the wire is a valid probability and must parse; a boolean must not.
   // `0` is a probability the API really sends, and a validator that rejected it because the
   // JSON literal is an integer would fail on a real response. A boolean is not a number and
   // must be refused. Measured on zod 4.6.5: `z.number().min(0).max(1)` accepts 0 and 1 and
   // rejects `true`, `NaN` and `Infinity`.
-  expect(parseResponse(bad(0)).answers["q0"]).toEqual({ type: "noul", noul: 0 });
-  expect(parseResponse(bad(1)).answers["q0"]).toEqual({ type: "noul", noul: 1 });
-  expect(() =>
-    parseResponse({
-      model: "jev-1.13.0",
-      answers: { q0: { type: "noul", noul: true } },
-      usage: { input_tokens: 1, output_tokens: 1 },
-    }),
+  expect(parseResponse(bad(0)).answers["q0"], "0 is a probability").toEqual({
+    type: "noul",
+    noul: 0,
+  });
+  expect(parseResponse(bad(1)).answers["q0"], "1 is a probability").toEqual({
+    type: "noul",
+    noul: 1,
+  });
+  expect(
+    () =>
+      parseResponse({
+        model: "jev-1.13.0",
+        answers: { q0: { type: "noul", noul: true } },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    "a boolean is not a probability",
   ).toThrow(expect.objectContaining({ kind: "protocol" }));
   const withExtras = {
     model: "jev-1.13.0",
@@ -71,23 +93,27 @@ test("probabilities are range-checked at parse time and unknown fields are ignor
     trace_id: "abc",
   };
   const parsed = parseResponse(withExtras);
-  expect(parsed).toEqual({
-    model: "jev-1.13.0",
-    answers: { q0: { type: "noul", noul: 0.5 } },
-    usage: { input_tokens: 1, output_tokens: 1 },
-  });
+  expect(parsed, "fields the contract does not name are ignored, not kept and not refused").toEqual(
+    {
+      model: "jev-1.13.0",
+      answers: { q0: { type: "noul", noul: 0.5 } },
+      usage: { input_tokens: 1, output_tokens: 1 },
+    },
+  );
 
   // SC5 says the REQUEST schema too, not only the response. A body this package builds and
   // cannot validate is its own mistake, so it is a `config` error.
-  expect(() => parseRequest({ model: "", questions: {}, state: "x" })).toThrow(
-    expect.objectContaining({ kind: "config" }),
-  );
+  expect(
+    () => parseRequest({ model: "", questions: {}, state: "x" }),
+    "a request this package cannot validate is its own config error",
+  ).toThrow(expect.objectContaining({ kind: "config" }));
   expect(
     parseRequest({
       state: "x",
       model: "jev-latest",
       questions: { q0: { type: "noul", instructions: "urgent?" } },
     }).model,
+    "a valid request parses to itself",
   ).toBe("jev-latest");
 
   // And both schemas agree with the vendored spec/schema/*.json on what an object is and what
@@ -107,16 +133,20 @@ test("probabilities are range-checked at parse time and unknown fields are ignor
   for (const which of ["request", "response"] as const) {
     const mine = asObjectSchema(shapes[which]);
     const theirs = asObjectSchema(vendored[which]);
-    expect([...(mine.required ?? [])].sort()).toEqual([...(theirs.required ?? [])].sort());
-    expect(Object.keys(mine.properties ?? {}).sort()).toEqual(
-      Object.keys(theirs.properties ?? {}).sort(),
-    );
+    expect(
+      [...(mine.required ?? [])].sort(),
+      `the ${which} schema requires what spec/schema/${which}.json requires`,
+    ).toEqual([...(theirs.required ?? [])].sort());
+    expect(
+      Object.keys(mine.properties ?? {}).sort(),
+      `the ${which} schema names the properties spec/schema/${which}.json names`,
+    ).toEqual(Object.keys(theirs.properties ?? {}).sort());
     // And no array bound anywhere. The score question's `criteria` is a bare string array in
     // the vendored schema; a `minItems` / `maxItems` here would be this package inventing a
     // bound the contract does not state. The 2..=10 level rule lives in `ScoreImpl.encode`,
     // which is where Rust enforces it too, and `test/rubric-rules.test.ts` reaches it.
-    expect(JSON.stringify(theirs), `vendored ${which}`).not.toMatch(/minItems|maxItems/u);
-    expect(JSON.stringify(mine), `emitted ${which}`).not.toMatch(/minItems|maxItems/u);
+    expect(hasArrayBound(theirs), `vendored ${which} states no array bound`).toBe(false);
+    expect(hasArrayBound(mine), `emitted ${which} states no array bound`).toBe(false);
   }
 });
 
@@ -132,6 +162,9 @@ const request = {
 const clientFor = (baseUrl: string, maxRetries = 3): Client =>
   createClient({ apiKey: new ApiKey("test-key"), baseUrl, maxRetries, backoff: 10 });
 
+// Only the three cases below fan out over both endpoints: 401, 429 with `retry-after`, and a
+// refused connection. `send()` is the one seam both endpoints share, so the rest of the policy
+// is proven once, through `evaluate`, and holds for `models` by construction.
 const both = [
   { endpoint: "POST /v1/systemone", call: (c: Client): Promise<unknown> => c.evaluate(request) },
   { endpoint: "GET /v1/models", call: (c: Client): Promise<unknown> => c.models() },
@@ -142,7 +175,6 @@ test.each(both)("$endpoint: 401 is auth and is not retried", async ({ call }) =>
   await expect(call(clientFor(server.baseUrl))).rejects.toMatchObject({ kind: "auth" });
   expect(server.received).toHaveLength(1);
   expect(server.received[0]?.headers["authorization"]).toBe("Bearer test-key");
-  await server.close();
 });
 
 test("422 carries the body verbatim and is not retried", async () => {
@@ -153,34 +185,38 @@ test("422 carries the body verbatim and is not retried", async () => {
     body,
   });
   expect(server.received).toHaveLength(1);
-  await server.close();
 });
 
 test.each(both)(
   "$endpoint: 429 with retry-after: 1 is retried after that delay",
   async ({ endpoint, call }) => {
-    const ok = endpoint === "GET /v1/models" ? MODELS : NOUL;
+    const isModels = endpoint === "GET /v1/models";
     const server = await startServer([
       { status: 429, headers: { "retry-after": "1" }, body: "" },
-      { status: 200, body: ok },
+      { status: 200, body: isModels ? MODELS : NOUL },
     ]);
     const started = Date.now();
     const result = await call(clientFor(server.baseUrl));
-    expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
+    const waited = Date.now() - started;
+    expect(waited, "retry-after: 1 is honoured as one second").toBeGreaterThanOrEqual(1000);
+    expect(waited, "and not as the computed backoff on top of it, or a second wait").toBeLessThan(
+      2000,
+    );
     expect(server.received).toHaveLength(2);
-    expect(result).toBeDefined();
-    await server.close();
+    expect(result).toEqual(isModels ? MODELS_PARSED : parseResponse(noulFixture));
   },
 );
 
 test("a retry-after longer than the cap fails at once and carries the value", async () => {
   const server = await startServer([{ status: 429, headers: { "retry-after": "3600" }, body: "" }]);
-  await expect(clientFor(server.baseUrl).evaluate(request)).rejects.toMatchObject({
+  await expect(
+    clientFor(server.baseUrl).evaluate(request),
+    "a wait over the 30 s cap is not taken; the error carries it for the caller",
+  ).rejects.toMatchObject({
     kind: "rate_limited",
     retryAfterMs: 3_600_000,
   });
-  expect(server.received).toHaveLength(1);
-  await server.close();
+  expect(server.received, "a wait that is not taken is not followed by a resend").toHaveLength(1);
 
   // Integer seconds only. Rust parses the header with `u64::from_str`, which refuses anything
   // that is not entirely digits, so `3.5` and `1abc` are the ABSENT case there and must be
@@ -197,8 +233,7 @@ test("a retry-after longer than the cap fails at once and carries the value", as
     // The computed backoff at attempt 0 is 10 ms plus jitter, nowhere near the 1 s or 3.5 s a
     // parsed header would have asked for.
     expect(Date.now() - started, `retry-after: ${header} must not be honoured`).toBeLessThan(1000);
-    expect(loose.received).toHaveLength(2);
-    await loose.close();
+    expect(loose.received, `retry-after: ${header} is absent, so 429 is retried`).toHaveLength(2);
   }
 });
 
@@ -209,7 +244,6 @@ test("529 exhausts the budget, then carries the retry-after it last saw", async 
     retryAfterMs: 2000,
   });
   expect(server.received).toHaveLength(3); // maxRetries + 1
-  await server.close();
 });
 
 test.each(both)(
@@ -243,7 +277,6 @@ test("a timeout is NOT retried: one attempt, then transport", async () => {
   await expect(client.evaluate(request)).rejects.toMatchObject({ kind: "transport" });
   expect(attempts).toHaveBeenCalledTimes(1);
   expect(server.received).toHaveLength(1);
-  await server.close();
 });
 
 test("a body that closes mid-stream is NOT retried", async () => {
@@ -254,7 +287,6 @@ test("a body that closes mid-stream is NOT retried", async () => {
   // The rejection is a TypeError, exactly like a refused connection. Only the phase tells
   // them apart, and the phase is why this served exactly one request.
   expect(server.received).toHaveLength(1);
-  await server.close();
 });
 
 // ---- shapes, the guide and the receipt (cases 21-25) -------------------------------------
@@ -263,11 +295,11 @@ test("a malformed body and an option outside the rubric are both protocol errors
   const guideFor = (baseUrl: string): Guide =>
     new Guide({ apiKey: new ApiKey("k"), baseUrl, backoff: 10 });
 
-  const malformed = await startServer([{ status: 200, body: JSON.stringify(badNoulFixture) }]);
-  await expect(guideFor(malformed.baseUrl).ask(noul("Urgent?"), "x")).rejects.toMatchObject({
-    kind: "protocol",
-  });
-  await malformed.close();
+  const malformed = await startServer([{ status: 200, body: BAD_NOUL_AS_Q0 }]);
+  await expect(
+    guideFor(malformed.baseUrl).ask(noul("Urgent?"), "x"),
+    "a body that breaks the response schema is a protocol error",
+  ).rejects.toMatchObject({ kind: "protocol" });
 
   const ghost = await startServer([
     {
@@ -287,10 +319,10 @@ test("a malformed body and an option outside the rubric are both protocol errors
     },
   ]);
   const Two = choice({ billing: option("b"), technical: option("t") });
-  await expect(guideFor(ghost.baseUrl).ask(choose(Two, "Which?"), "x")).rejects.toMatchObject({
-    kind: "protocol",
-  });
-  await ghost.close();
+  await expect(
+    guideFor(ghost.baseUrl).ask(choose(Two, "Which?"), "x"),
+    "an option the rubric does not contain is a protocol error, never a default",
+  ).rejects.toMatchObject({ kind: "protocol" });
 
   // A redirect is not followed: the Authorization header would travel with it. The status
   // falls through to `unexpected_status` and the host the `location` names sees nothing.
@@ -298,13 +330,11 @@ test("a malformed body and an option outside the rubric are both protocol errors
   const redirecting = await startServer([
     { status: 302, headers: { location: `${elsewhere.baseUrl}/v1/systemone` }, body: "" },
   ]);
-  await expect(guideFor(redirecting.baseUrl).ask(noul("Urgent?"), "x")).rejects.toMatchObject({
-    kind: "unexpected_status",
-    status: 302,
-  });
-  expect(elsewhere.received).toHaveLength(0);
-  await redirecting.close();
-  await elsewhere.close();
+  await expect(
+    guideFor(redirecting.baseUrl).ask(noul("Urgent?"), "x"),
+    "a redirect surfaces as unexpected_status and is not followed",
+  ).rejects.toMatchObject({ kind: "unexpected_status", status: 302 });
+  expect(elsewhere.received, "the redirect target never sees the request").toHaveLength(0);
 });
 
 test("unsure with no fallback names the question; an empty batch is a config error", async () => {
@@ -329,7 +359,6 @@ test("unsure with no fallback names the question; an empty batch is a config err
   );
   await expect(guide.ask([], "x")).rejects.toMatchObject({ kind: "config" });
   await expect(guide.ask({}, "x")).rejects.toMatchObject({ kind: "config" });
-  await server.close();
 });
 
 test("askWithReceipt returns the response's model and usage exactly", async () => {
@@ -346,7 +375,6 @@ test("askWithReceipt returns the response's model and usage exactly", async () =
   expect(Object.isFrozen(receipt.usage)).toBe(true);
   // The request carried the alias.
   expect(JSON.parse(server.received[0]?.body ?? "{}")).toMatchObject({ model: "jev-latest" });
-  await server.close();
 });
 
 test("ask returns the bare answer for every shape", async () => {
@@ -395,30 +423,40 @@ test("ask returns the bare answer for every shape", async () => {
     "a ticket",
   );
   const [urgent, dept, mood, flags] = result;
-  expect(urgent).toBe(true);
-  expect(dept).toBe("billing");
-  expect(mood).toBe("frustrated");
-  expect(flags).toEqual({ spam: false, vip: true });
+  expect(urgent, "a noul answers a boolean").toBe(true);
+  expect(dept, "a choice answers its option key").toBe("billing");
+  expect(mood, "a score answers its argmax level's key").toBe("frustrated");
+  expect(flags, "an object shape answers an object of the same keys").toEqual({
+    spam: false,
+    vip: true,
+  });
 
   // The ids are q0..q4 in encounter order, depth first, and the object shape's two questions
   // are the last two because they were written last.
   const sent: unknown = JSON.parse(server.received[0]?.body ?? "{}");
-  expect(Object.keys(questionsOf(sent))).toEqual(["q0", "q1", "q2", "q3", "q4"]);
+  expect(Object.keys(questionsOf(sent)), "ids are q0..qN in encounter order").toEqual([
+    "q0",
+    "q1",
+    "q2",
+    "q3",
+    "q4",
+  ]);
 
   // A plain array is an array, not a tuple, and a bare question is its own answer.
-  await expect(guide.ask(noul("urgent?"), "x")).resolves.toBe(true);
+  await expect(guide.ask(noul("urgent?"), "x"), "a bare question is its own answer").resolves.toBe(
+    true,
+  );
 
   // models() copies the wire entry into this package's own shape, snake to camel.
   const catalogue = await guide.models();
-  expect(catalogue).toEqual([
+  expect(catalogue, "models() answers this package's shape, snake to camel").toEqual([
     {
       name: "jev-latest",
       description: "The most recent stable release",
       releaseDate: "2026-08-01",
     },
   ]);
-  expect(Object.isFrozen(catalogue[0])).toBe(true);
-  await server.close();
+  expect(Object.isFrozen(catalogue[0]), "a catalogue entry is frozen").toBe(true);
 
   // And the object-shape ordering rule, in the same case so the budget stays at 40. JavaScript
   // reorders integer-like keys ahead of string keys, so "1" is encountered before "2" whatever
@@ -433,9 +471,14 @@ test("ask returns the bare answer for every shape", async () => {
   const second = new Guide({ apiKey: new ApiKey("k"), baseUrl: ordered.baseUrl });
   const answered = await second.ask({ "2": noul("second"), "1": noul("first") }, "x");
   const ordering: unknown = JSON.parse(ordered.received[0]?.body ?? "{}");
-  expect(questionsOf(ordering)["q0"]?.instructions).toBe("first");
-  expect(answered).toEqual({ "1": true, "2": false });
-  await ordered.close();
+  expect(
+    questionsOf(ordering)["q0"]?.instructions,
+    "an integer-like key is encountered first, as JavaScript orders it",
+  ).toBe("first");
+  expect(answered, "each answer comes back under the key it was asked by").toEqual({
+    "1": true,
+    "2": false,
+  });
 });
 
 test("an injected fetch is the only transport, and the README recipe is this input", async () => {
@@ -449,10 +492,10 @@ test("an injected fetch is the only transport, and the README recipe is this inp
       confidence: 0.95,
     },
   };
+  const calls: { url: string; authorization: string | null }[] = [];
   const fakeFetch: typeof globalThis.fetch = (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    expect(url).toContain("/v1/systemone");
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-test");
+    calls.push({ url, authorization: new Headers(init?.headers).get("authorization") });
     return Promise.resolve(
       new Response(
         JSON.stringify({
@@ -472,6 +515,8 @@ test("an injected fetch is the only transport, and the README recipe is this inp
   );
   expect(urgent).toBe(true);
   expect(dept).toBe("billing");
+  expect(calls).toEqual([
+    { url: "https://api.typesafe.ai/v1/systemone", authorization: "Bearer sk-test" },
+  ]);
   expect(realFetch).not.toHaveBeenCalled();
-  realFetch.mockRestore();
 });

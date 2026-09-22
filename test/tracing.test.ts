@@ -19,9 +19,7 @@ import {
   option,
   score,
 } from "../src/index.js";
-import noulQ0 from "./fixtures/noul-q0.json" with { type: "json" };
-
-const NOUL_AS_Q0 = JSON.stringify(noulQ0);
+import { NOUL_AS_Q0 } from "./support/fixtures.js";
 
 const exporter = new InMemorySpanExporter();
 
@@ -70,8 +68,8 @@ test("one guideme.ask span carries exactly the documented attributes", async () 
   const server = await startServer([{ status: 200, body: NOUL_AS_Q0 }]);
   const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
   await guide.ask(noul("Urgent?"), "hello");
+  expect(spansNamed("guideme.ask"), "one guideme.ask span per Guide.ask").toHaveLength(1);
   const [ask] = spansNamed("guideme.ask");
-  expect(ask).toBeDefined();
   expect(ask?.kind).toBe(SpanKind.CLIENT);
   expect(ask?.instrumentationScope.name).toBe("guideme");
   expect(Object.keys(ask?.attributes ?? {}).sort()).toEqual([
@@ -96,7 +94,6 @@ test("one guideme.ask span carries exactly the documented attributes", async () 
   expect(ask?.attributes["guideme.state.bytes"]).toBe(
     new TextEncoder().encode(JSON.stringify("hello")).byteLength,
   );
-  await server.close();
 });
 
 test("one HTTP child span per attempt, with resend_count from the second", async () => {
@@ -117,7 +114,6 @@ test("one HTTP child span per attempt, with resend_count from the second", async
   // Both are children of the one ask span.
   const [ask] = spansNamed("guideme.ask");
   for (const a of attempts) expect(a.parentSpanContext?.spanId).toBe(ask?.spanContext().spanId);
-  await server.close();
 });
 
 test.each([
@@ -205,7 +201,6 @@ test.each([
     expect(attrs["guideme.outcome"]).toBe(1);
     expect(attrs["guideme.value"]).toBe(0.9);
   }
-  await server.close();
 });
 
 test("a failure marks the ask span and never emits an ERROR log", async () => {
@@ -218,7 +213,6 @@ test("a failure marks the ask span and never emits an ERROR log", async () => {
   expect(ask?.status.message).toContain("unauthorized");
   // guideme never emits an ERROR event; a failure is the span's status and nothing else.
   expect(ask?.events.map((e) => e.name)).not.toContain("guideme.error");
-  await server.close();
 
   // The 422 body could echo the caller's state, so it goes on the returned error and NOT on
   // the span's status description. This is Rust's `describe()` and it is the reason that
@@ -236,7 +230,6 @@ test("a failure marks the ask span and never emits an ERROR log", async () => {
   expect(failed?.attributes["error.type"]).toBe("invalid");
   expect(failed?.status.message).toBe("invalid request: the 422 body is on the returned error");
   expect(serialiseSpans(exporter.getFinishedSpans())).not.toContain(secret);
-  await invalid.close();
 });
 
 test("state is user data: bytes always, content only when asked for", async () => {
@@ -257,44 +250,52 @@ test("state is user data: bytes always, content only when asked for", async () =
   await loud.ask(noul("Urgent?"), body);
   [ask] = spansNamed("guideme.ask");
   expect(ask?.attributes["guideme.state"]).toBe(JSON.stringify(body));
-  await server.close();
 });
 
 test.each([
   { name: "429", status: 429 },
   { name: "529", status: 529 },
-])("a $name retry event carries a status and no error.type", async ({ status }) => {
-  const server = await startServer([
-    { status, body: "" },
-    { status: 200, body: NOUL_AS_Q0 },
-  ]);
-  const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl, backoff: 10 });
-  await guide.ask(noul("Urgent?"), "x");
-  const events = spansNamed("POST /v1/systemone").flatMap((s) => s.events);
-  const retries = events.filter((e) => e.name === "guideme.retry");
-  expect(retries).toHaveLength(1);
-  expect(retries[0]?.attributes?.["http.response.status_code"]).toBe(status);
-  expect(retries[0]?.attributes?.["error.type"]).toBeUndefined();
-  expect(retries[0]?.attributes?.["guideme.retry.attempt"]).toBe(1);
-  expect(typeof retries[0]?.attributes?.["guideme.retry.delay_ms"]).toBe("number");
-  await server.close();
+  { name: "refused connection", status: undefined },
+] as const)(
+  "a $name retry event carries exactly one of a status and an error.type",
+  async ({ status }) => {
+    // A status row answers once with that status and then succeeds; the refused row points at a
+    // port nothing listens on, so its one retry is a transport failure and the ask then fails.
+    const baseUrl =
+      status === undefined
+        ? `http://127.0.0.1:${String(await closedPort())}`
+        : (
+            await startServer([
+              { status, body: "" },
+              { status: 200, body: NOUL_AS_Q0 },
+            ])
+          ).baseUrl;
+    const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl, maxRetries: 1, backoff: 10 });
+    const settled = await guide.ask(noul("Urgent?"), "x").then(
+      () => "answered",
+      (e: unknown) => (e instanceof GuidemeError ? e.kind : "not a GuidemeError"),
+    );
+    expect(settled, "a status is retried to success; a refused connection ends as transport").toBe(
+      status === undefined ? "transport" : "answered",
+    );
 
-  // And the other half of the exclusivity rule: a refused connection carries error.type and
-  // no status. Folded into this case so the budget stays at one.
-  exporter.reset();
-  const port = await closedPort();
-  const unreachable = new Guide({
-    apiKey: new ApiKey("k"),
-    baseUrl: `http://127.0.0.1:${String(port)}`,
-    maxRetries: 1,
-    backoff: 10,
-  });
-  await expect(unreachable.ask(noul("Urgent?"), "x")).rejects.toMatchObject({ kind: "transport" });
-  const transportRetries = exporter
-    .getFinishedSpans()
-    .flatMap((s) => s.events)
-    .filter((e) => e.name === "guideme.retry");
-  expect(transportRetries).toHaveLength(1);
-  expect(transportRetries[0]?.attributes?.["error.type"]).toBe("transport");
-  expect(transportRetries[0]?.attributes?.["http.response.status_code"]).toBeUndefined();
-});
+    const retries = exporter
+      .getFinishedSpans()
+      .flatMap((s) => s.events)
+      .filter((e) => e.name === "guideme.retry");
+    expect(retries, "one guideme.retry event before each wait").toHaveLength(1);
+    const attrs = retries[0]?.attributes ?? {};
+    expect(
+      attrs["http.response.status_code"],
+      "a retry after a response carries its status, and one after no response carries none",
+    ).toBe(status);
+    expect(
+      attrs["error.type"],
+      "error.type is present exactly when http.response.status_code is not",
+    ).toBe(status === undefined ? "transport" : undefined);
+    expect(attrs["guideme.retry.attempt"], "the first retry is attempt 1").toBe(1);
+    expect(typeof attrs["guideme.retry.delay_ms"], "the wait is recorded in milliseconds").toBe(
+      "number",
+    );
+  },
+);

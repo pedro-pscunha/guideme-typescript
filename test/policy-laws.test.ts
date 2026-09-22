@@ -29,9 +29,10 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
     fc.property(unit, band, (p, [noBelow, yesAbove]) => {
       const t = thresholds(yesAbove, noBelow, 0);
       const out = noulOutcome(resolve({ type: "noul", noul: p }, t));
-      if (p >= yesAbove) return out.verdict === "yes";
-      if (p <= noBelow) return out.verdict === "no";
-      return out.verdict === "unsure" && p > noBelow && p < yesAbove;
+      const expected = p >= yesAbove ? "yes" : p <= noBelow ? "no" : "unsure";
+      expect(out.verdict, `p=${String(p)} against [${String(noBelow)}, ${String(yesAbove)}]`).toBe(
+        expected,
+      );
     }),
   );
   // Monotone in p: raising p can only move the verdict toward yes.
@@ -58,6 +59,21 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
   );
 });
 
+/**
+ * Whether `a` sorts strictly before `b` by Unicode code point. The oracle for the tie-break,
+ * written independently of `compareByCodePoint` so the law does not grade the comparator with
+ * itself: `Array.from` over a string iterates code points, not UTF-16 units.
+ */
+const beforeByCodePoint = (a: string, b: string): boolean => {
+  const x = Array.from(a, (c) => c.codePointAt(0) ?? 0);
+  const y = Array.from(b, (c) => c.codePointAt(0) ?? 0);
+  for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
+    const [p, q] = [x[i] ?? 0, y[i] ?? 0];
+    if (p !== q) return p < q;
+  }
+  return x.length < y.length;
+};
+
 /** Descending by probability, and where two are equal, ascending by key. */
 const isRanked = (ranked: ChoiceOutcome["ranked"]): boolean => {
   for (let i = 1; i < ranked.length; i += 1) {
@@ -65,7 +81,7 @@ const isRanked = (ranked: ChoiceOutcome["ranked"]): boolean => {
     const here = ranked[i];
     if (prev === undefined || here === undefined) return false;
     if (prev[1] < here[1]) return false;
-    if (prev[1] === here[1] && compareByCodePoint(prev[0], here[0]) >= 0) return false;
+    if (prev[1] === here[1] && !beforeByCodePoint(prev[0], here[0])) return false;
   }
   return true;
 };
@@ -82,15 +98,14 @@ test("choice: unsure iff confidence < minConfidence, and ranked is descending th
   fc.assert(
     fc.property(distribution, unit, unit, (probabilities, c, minConfidence) => {
       const keys = Object.keys(probabilities);
-      if (keys.length === 0) return true;
       const chosen = keys[0] ?? "";
       const t = thresholds(0.5, 0.5, minConfidence);
       const out = choiceOutcome(
         resolve({ type: "choice", choice: chosen, probabilities, confidence: c }, t),
       );
-      if (out.unsure !== c < minConfidence) return false;
-      if (out.ranked.length !== keys.length) return false;
-      return isRanked(out.ranked);
+      expect(out.unsure, "unsure iff confidence < minConfidence").toBe(c < minConfidence);
+      expect(out.ranked, "every option is ranked").toHaveLength(keys.length);
+      expect(isRanked(out.ranked), "descending by probability, then by key").toBe(true);
     }),
   );
 
@@ -137,6 +152,20 @@ test("score: index is the argmax, ties to the lowest", () => {
       return out.index === ps.indexOf(best);
     }),
   );
+  // The tie, stated once without the generator: two equal levels resolve to the lower.
+  const tie = scoreOutcome(
+    resolve(
+      {
+        type: "score",
+        score: 0.5,
+        legend: { "0": "low", "1": "high" },
+        probabilities: { "0": 0.5, "1": 0.5 },
+        confidence: 1,
+      },
+      thresholds(0.5, 0.5, 0),
+    ),
+  );
+  expect(tie.index, "a tie goes to the lowest level").toBe(0);
 });
 
 test("a rubric with no parts renders to itself, byte for byte, for any string", () => {

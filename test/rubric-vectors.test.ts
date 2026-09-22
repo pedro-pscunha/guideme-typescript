@@ -23,13 +23,13 @@ const rebuild = (c: RubricCase) => {
     : option(c.what, { ...examples, ...counterexamples });
 };
 
-test.each(all.map((c, i) => ({ c, i })))("rubric vector $i renders byte for byte", ({ c, i }) => {
-  if (i === 0) {
-    expect(all).toHaveLength(10);
-    expect(all.filter((x) => x.kind === "choice")).toHaveLength(6);
-    expect(all.filter((x) => x.kind === "levels")).toHaveLength(2);
-    expect(all.filter((x) => x.kind === "noul")).toHaveLength(2);
-  }
+// Asserted at collection time, so a truncated or re-vendored file fails the whole file.
+expect(all, "spec/vectors/rubric.json holds 10 cases").toHaveLength(10);
+expect(all.filter((x) => x.kind === "choice")).toHaveLength(6);
+expect(all.filter((x) => x.kind === "levels")).toHaveLength(2);
+expect(all.filter((x) => x.kind === "noul")).toHaveLength(2);
+
+test.each(all.map((c, i) => ({ c, i })))("rubric vector $i renders byte for byte", ({ c }) => {
   expect(render(rebuild(c))).toBe(c.rendered);
 });
 

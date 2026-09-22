@@ -1,5 +1,0 @@
-{
-  "model": "jev-1.13.0",
-  "answers": { "q0": { "type": "noul", "noul": 0.95 } },
-  "usage": { "input_tokens": 307, "output_tokens": 20 }
-}

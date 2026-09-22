@@ -28,15 +28,14 @@ const settled = (t: VectorThresholds): Thresholds =>
 const outcomes = all.map((v, i) => ({ v, i })).filter(({ v }) => v.outcome !== undefined);
 const errors = all.map((v, i) => ({ v, i })).filter(({ v }) => v.error !== undefined);
 
-// Two cases, which is what the budget allocates. The counts are asserted inside the first row
-// of the first table rather than in a third test, so the file cannot silently replay a vector
-// file that has been truncated or re-vendored with a different shape.
-test.each(outcomes)("vector $i resolves to its golden outcome", ({ v, i }) => {
-  if (i === 0) {
-    expect(all).toHaveLength(42);
-    expect(outcomes).toHaveLength(39);
-    expect(errors).toHaveLength(3);
-  }
+// Two cases, which is what the budget allocates. The counts are asserted at collection time
+// rather than in a third test, so the file cannot silently replay a vector file that has been
+// truncated or re-vendored with a different shape, and a failure here fails the whole file.
+expect(all, "spec/vectors/policy.json holds 42 vectors").toHaveLength(42);
+expect(outcomes, "39 of them resolve to an outcome").toHaveLength(39);
+expect(errors, "3 of them are protocol violations").toHaveLength(3);
+
+test.each(outcomes)("vector $i resolves to its golden outcome", ({ v }) => {
   const got = resolve(v.answer, settled(v.thresholds));
   expect(JSON.parse(JSON.stringify(got))).toEqual(v.outcome);
 });

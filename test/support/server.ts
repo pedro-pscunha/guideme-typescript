@@ -1,5 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import { onTestFinished } from "vitest";
 
 /** One request the server received, as the tests assert on it. */
 export interface Received {
@@ -25,8 +26,6 @@ export interface TestServer {
   readonly baseUrl: string;
   /** Everything received, in order. */
   readonly received: readonly Received[];
-  /** Stop the server and release the port. */
-  close(): Promise<void>;
 }
 
 /** The bound port, narrowed rather than asserted: `address()` is a three-way union. */
@@ -40,7 +39,8 @@ const portOf = (server: http.Server): number => {
 
 /**
  * Start a server that answers with `replies[i]` for the i-th request and repeats the last
- * reply forever after that.
+ * reply forever after that. It closes itself when the test that started it finishes, pass or
+ * fail, so no case carries a trailing `close()` that a failed assertion would skip.
  */
 export const startServer = async (replies: readonly Reply[]): Promise<TestServer> => {
   const received: Received[] = [];
@@ -74,18 +74,15 @@ export const startServer = async (replies: readonly Reply[]): Promise<TestServer
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
   });
-  return {
-    baseUrl: `http://127.0.0.1:${String(portOf(server))}`,
-    received,
-    close: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
+  onTestFinished(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
       });
-    },
-  };
+    });
+  });
+  return { baseUrl: `http://127.0.0.1:${String(portOf(server))}`, received };
 };
 
 /** A port nothing listens on: bind it, read the number, then release it. */

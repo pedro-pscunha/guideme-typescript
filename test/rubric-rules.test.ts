@@ -3,6 +3,7 @@ import { choice, chooseAmong, encodeQuestion, levels, noul, scoreLevels } from "
 import type { AnyQuestion } from "../src/question.js";
 import { fallback, level, option, render } from "../src/rubric.js";
 import type { WireQuestion } from "../src/api/wire.js";
+import { GuidemeError } from "../src/errors.js";
 
 // One question needs no shape mapper, so this goes through `encodeQuestion` rather than
 // through `src/ask.ts`: the rules are about what reaches the wire, and this file must compile
@@ -16,6 +17,7 @@ const refuses = (what: string, build: () => unknown): void => {
   } catch (e) {
     thrown = e;
   }
+  expect(thrown, `${what} must be refused with this package's error`).toBeInstanceOf(GuidemeError);
   expect(thrown, `${what} must be refused`).toMatchObject({ kind: "config" });
 };
 
