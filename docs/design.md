@@ -49,6 +49,19 @@ Each module survives the test.
   `Thresholds` is validated on construction and is what `resolve` and the golden vectors take.
 - **The unsure ladder.** `.or(value)` beats the descriptor's `fallback` beats a typed `unsure`
   error. `.detail()` switches to `Verdict` / `Ranked<K>` / `Scored<K>` and never fails.
+- **A detailed question has no `or`, and the compiler says so.** `detail()` returns its own
+  interface — `DetailedNoulQuestion`, `DetailedChoiceQuestion<Out>`, `DetailedScoreQuestion<Out>`
+  — which carries `with` and the threshold setters and nothing else. `readAnswer` dispatches on
+  `detailed` before it looks at a fallback, so a value set after `.detail()` would be discarded
+  without a word, and Rust says the same thing by not implementing `Fallible` for `Detailed<K>`.
+  The three are exported from `src/question.ts` for `src/ask.ts` and are not re-exported from
+  `src/index.ts`, so the surface stays at thirteen values and twenty-three types; a caller meets
+  one only as `detail()`'s return type. They are parameterised by the **answer** rather than by
+  the key, because that is the type argument `Answered` reads straight back off the reference.
+- **A runtime choice has two rungs.** `chooseAmong` answers a `Key` and there is no descriptor
+  to hold a marked option, exactly as Rust's `impl Options for Key` names no fallback variant.
+  A `fallback()` value handed to it is a `config` error rather than a silent no-op: a rung the
+  caller believes they have and does not is worse than a refusal at the call site.
 - **Score plain output is the argmax level.** `.detail()` exposes the API's expected `value`.
 - **`levels()` does not generate an ordering operator.** Declaration order is level order, and
   the descriptor carries `index`, `compare`, `atLeast` and `rank`, so the two cannot disagree
@@ -93,6 +106,12 @@ Each module survives the test.
   | body truncated mid-stream    | `TypeError` — the same class        | the `await response.text()` rejecting |
   | `AbortSignal.timeout` firing | `DOMException` named `TimeoutError` | not a `TypeError`, so never resent    |
   | `AbortController.abort()`    | `DOMException` named `AbortError`   | the same                              |
+
+  `retry-after` is read the same way — by naming the test rather than by reaching for the
+  idiom. The whole trimmed value must match `/^\d+$/`; `Number.parseInt` reads `"3.5"` as `3`
+  and `"1abc"` as `1` and would wait, where Rust's `u64::from_str` refuses both and falls back
+  to the computed backoff. A date-format `retry-after` starts with a digit too, so a prefix
+  parse honours part of a date as seconds.
 
   `instanceof TypeError` alone cannot tell a connection failure from a body failure, so the
   loop puts `fetch` and the body read in separate `try` blocks and only the first one resends.
@@ -162,7 +181,7 @@ return type annotation` — so the type gate catches a missing annotation, not o
 
 - **A batch is atomic.** One answer that resolves to an `unsure` or `protocol` error fails the
   whole call. Use `.or(..)`, a descriptor `fallback`, or `.detail()` on the questions that may
-  be unsure.
+  be unsure — and on a runtime choice, `.or(..)` or `.detail()`, because there is no descriptor.
 - **Ids are visible.** `q{n}` appears on the wire, in the `unsure` error and in
   `guideme.answer` events. They are positions in encounter order, nothing more — and for the
   object shape, `docs/contract.md` §5 says exactly what that order is.

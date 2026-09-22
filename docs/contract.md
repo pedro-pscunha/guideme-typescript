@@ -128,7 +128,23 @@ side-stepped it to force the parenting would break the direction that matters mo
 Python need no equivalent step, because `tracing` and `contextvars` carry the active span for
 them.
 
-## 8. Two things this SDK holds with the compiler that the others hold with a test
+## 8. The unsure ladder for a runtime choice has two rungs, not three
+
+The contract states one ladder: the question's own fallback value, then the alternative marked
+as the fallback, then a typed `unsure` error. For a **runtime** choice the middle rung does not
+exist in any SDK — Rust's `choose_among` answers a `Key`, and `impl Options for Key` names no
+fallback variant, so there is nothing for a marked option to be.
+
+This SDK **refuses** a `fallback()` value handed to `chooseAmong`, with a `config` error naming
+the rule, rather than accepting it and ignoring it. The reading is that a rung the caller
+believes they have and does not is worse than a refusal at the call site: `fallback("…")` reads
+as a setting, and a setting that silently does nothing is the failure mode the whole package is
+written against. `scoreLevels` needs no equivalent, because a level has no fallback to mark.
+
+The rung that does exist is `.or(key)`. `test/rubric-rules.test.ts` carries the refusal as row
+14 of its table.
+
+## 9. Three things this SDK holds with the compiler that the others hold with a test
 
 Not divergences — the same contract, checked earlier.
 
@@ -142,3 +158,10 @@ belongs in the caller's code.
 `http.response.status_code` and `error.type` is present on a retry event. The event's argument
 type is a union of the two shapes rather than two optional fields, so an event with both or
 with neither cannot be constructed.
+
+**A detailed question has no unsure rung.** `.detail()` skips the ladder, so a fallback set
+after it would be discarded without a word. Rust says this by not implementing `Fallible` for
+`Detailed<K>`; here `detail()` returns its own interface, carrying `with` and the threshold
+setters and no `or`, so `noul("…").detail().or(x)` does not compile. Those three interfaces are
+not on the public surface — a caller meets one only as the return type of `detail()` — so the
+surface stays at thirteen values and twenty-three types.

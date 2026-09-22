@@ -173,6 +173,17 @@ test.each([
     contract: "the unsure ladder has one rung to fall to, so a choice has at most one fallback",
     build: (): unknown => choice({ a: fallback("a"), b: fallback("b"), c: option("c") }),
   },
+
+  // The fourteenth is the runtime half of the same ladder. A runtime choice answers `Key`,
+  // and Rust's `impl Options for Key` names no fallback variant, so there is no rung for a
+  // marked option to be. Refused rather than ignored: a `fallback()` that silently did
+  // nothing would be a rung the caller believes they have.
+  {
+    rule: 14,
+    name: "a fallback() value given to chooseAmong",
+    contract: "runtime options carry no fallback; the unsure ladder there is .or() then the error",
+    build: (): unknown => chooseAmong("Which?", { a: fallback("A"), b: option("B") }),
+  },
 ])("rule $rule: $name is refused", ({ name, build }) => {
   refuses(name, build);
 });

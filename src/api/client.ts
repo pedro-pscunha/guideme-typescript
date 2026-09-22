@@ -35,13 +35,22 @@ const jitter = (): number => {
   return (buf[0] ?? 0) % (JITTER_MS + 1);
 };
 
-/** Integer seconds only. A missing, non-integer or date-format header is `undefined`. */
+/**
+ * Integer seconds only. A missing, non-integer or date-format header is `undefined`, and the
+ * computed backoff applies instead.
+ *
+ * The test is the whole trimmed string against `/^\d+$/`, never `Number.parseInt`: that reads
+ * `"3.5"` as `3` and `"1abc"` as `1` and would wait, where Rust's `u64::from_str` refuses both
+ * and treats them as absent. A date-format `retry-after` starts with a digit too, so a prefix
+ * parse honours part of a date as seconds. Two SDKs waiting different amounts on the same
+ * header is the divergence this spelling exists to prevent.
+ */
 const parseRetryAfter = (headers: Headers): number | undefined => {
   const raw = headers.get("retry-after");
   if (raw === null) return undefined;
-  const seconds = Number.parseInt(raw.trim(), 10);
-  if (!Number.isInteger(seconds) || seconds < 0) return undefined;
-  return seconds * 1000;
+  const trimmed = raw.trim();
+  if (!/^\d+$/u.test(trimmed)) return undefined;
+  return Number(trimmed) * 1000;
 };
 
 /** Sleep, so the retry loop reads as one sequence rather than as a callback. */

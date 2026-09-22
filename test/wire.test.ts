@@ -111,6 +111,12 @@ test("probabilities are range-checked at parse time and unknown fields are ignor
     expect(Object.keys(mine.properties ?? {}).sort()).toEqual(
       Object.keys(theirs.properties ?? {}).sort(),
     );
+    // And no array bound anywhere. The score question's `criteria` is a bare string array in
+    // the vendored schema; a `minItems` / `maxItems` here would be this package inventing a
+    // bound the contract does not state. The 2..=10 level rule lives in `ScoreImpl.encode`,
+    // which is where Rust enforces it too, and `test/rubric-rules.test.ts` reaches it.
+    expect(JSON.stringify(theirs), `vendored ${which}`).not.toMatch(/minItems|maxItems/u);
+    expect(JSON.stringify(mine), `emitted ${which}`).not.toMatch(/minItems|maxItems/u);
   }
 });
 
@@ -175,6 +181,25 @@ test("a retry-after longer than the cap fails at once and carries the value", as
   });
   expect(server.received).toHaveLength(1);
   await server.close();
+
+  // Integer seconds only. Rust parses the header with `u64::from_str`, which refuses anything
+  // that is not entirely digits, so `3.5` and `1abc` are the ABSENT case there and must be
+  // here: the computed backoff applies and the request is retried. `Number.parseInt` would
+  // have read them as 3 and 1 and waited, which is a different wait in two SDKs. A
+  // date-format `retry-after` starts with a digit too, and is absent for the same reason.
+  for (const header of ["3.5", "1abc", "Wed, 21 Oct 2026 07:28:00 GMT", " "]) {
+    const loose = await startServer([
+      { status: 429, headers: { "retry-after": header }, body: "" },
+      { status: 200, body: NOUL },
+    ]);
+    const started = Date.now();
+    await clientFor(loose.baseUrl).evaluate(request);
+    // The computed backoff at attempt 0 is 10 ms plus jitter, nowhere near the 1 s or 3.5 s a
+    // parsed header would have asked for.
+    expect(Date.now() - started, `retry-after: ${header} must not be honoured`).toBeLessThan(1000);
+    expect(loose.received).toHaveLength(2);
+    await loose.close();
+  }
 });
 
 test("529 exhausts the budget, then carries the retry-after it last saw", async () => {

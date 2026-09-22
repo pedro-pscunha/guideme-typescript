@@ -269,5 +269,21 @@ test("illegal states are compiler errors", () => {
 
   // @ts-expect-error minConfidence belongs to a choice or a score, not a noul
   noul("Urgent?").minConfidence(0.6);
+
+  // A detailed question has no unsure rung, so it has no `or`. `readAnswer` dispatches on
+  // `detailed` before it looks at a fallback, so a value set here would be discarded without
+  // a word; Rust says the same by not implementing `Fallible` for `Detailed<K>`.
+  // @ts-expect-error a detailed noul never consults a fallback, so it has no or()
+  noul("Urgent?").detail().or({ verdict: "yes", p: 0.9 });
+
+  // @ts-expect-error a detailed choice never consults a fallback, so it has no or()
+  choose(Department, "Which?").detail().or("billing");
+
+  // @ts-expect-error a detailed score never consults a fallback, so it has no or()
+  score(Frustration, "How cross?").detail().or("calm");
+
+  // And it survives a `with(..)`, because the detailed type's own methods return it.
+  // @ts-expect-error still detailed after with(), so still no or()
+  noul("Urgent?").detail().with({ yesAbove: 0.9 }).or(true);
   /* eslint-enable @typescript-eslint/no-unsafe-call */
 });

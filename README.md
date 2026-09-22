@@ -209,7 +209,13 @@ The rules:
 
 When an answer is unsure, resolution goes down a ladder: `.or(value)` on the question, then the
 descriptor's `fallback` option, then an `unsure` error naming the question and the boundary it
-missed. `.detail()` skips the ladder and hands you the reading to decide yourself.
+missed. `.detail()` skips the ladder and hands you the reading to decide yourself — and because
+it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does not compile,
+rather than compiling and discarding `x`.
+
+A **runtime** choice has two rungs, not three. `chooseAmong` answers a `Key`, and there is no
+descriptor to carry a marked option, so handing it a `fallback()` value is a `config` error
+naming the rule. Use `.or(key)`.
 
 A house policy is a plain object:
 

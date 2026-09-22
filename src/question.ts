@@ -68,8 +68,18 @@ export type Option<D> = D extends ChoiceDescriptor<infer K> ? K : never;
 const checkedOptions = <K extends string>(
   keys: readonly K[],
   rubrics: readonly (OptionRubric | null)[],
+  where: "declared" | "runtime",
 ): K | undefined => {
   const marked = keys.filter((_, i) => rubrics[i]?.isFallback === true);
+  // A runtime choice answers a `Key` and has two rungs, not three: `.or(key)`, then the typed
+  // `unsure` error. Rust says the same by not naming a fallback variant in `impl Options for
+  // Key`. Refused rather than ignored, because a `fallback()` that silently did nothing would
+  // be a rung the caller believes they have.
+  if (where === "runtime" && marked.length > 0) {
+    throw configError(
+      `runtime options carry no fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} ${marked.length === 1 ? "is" : "are"} marked with fallback(). Use .or(key) for the unsure rung`,
+    );
+  }
   if (marked.length > 1) {
     throw configError(
       `a choice may have at most one fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} are all marked`,
@@ -89,7 +99,7 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
   const keys = keysOf(spec);
   const rubrics = keys.map((k) => spec[k]);
   // Rule 5 runs here so a shared example fails where the set was declared.
-  const fallbackKey = checkedOptions(keys, rubrics);
+  const fallbackKey = checkedOptions(keys, rubrics, "declared");
   return Object.freeze({
     descriptor: "choice",
     keys: Object.freeze(keys),
@@ -165,7 +175,7 @@ export interface NoulQuestion<Out = boolean> {
   /** Describe what a yes and a no mean. A description, or a rubric carrying examples. */
   criteria(yes: string | OptionRubric, no: string | OptionRubric): NoulQuestion<Out>;
   /** Ask for the full reading. Never fails on unsure; drops any `.or(..)` set before it. */
-  detail(): NoulQuestion<Verdict>;
+  detail(): DetailedNoulQuestion;
 }
 
 /** A choice over `K`. The plain output is `K`; `.detail()` switches to {@link Ranked}. */
@@ -179,7 +189,7 @@ export interface ChoiceQuestion<K extends string, Out = K> {
   /** Value to use when the policy says unsure. Beats the descriptor's fallback. */
   or(value: Out): ChoiceQuestion<K, Out>;
   /** Ask for the full reading. Never fails on unsure. */
-  detail(): ChoiceQuestion<K, Ranked<K>>;
+  detail(): DetailedChoiceQuestion<Ranked<K>>;
 }
 
 /** A score over `K`. The plain output is the argmax `K`; `.detail()` gives {@link Scored}. */
@@ -193,15 +203,71 @@ export interface ScoreQuestion<K extends string, Out = K> {
   /** Value to use when the policy says unsure. */
   or(value: Out): ScoreQuestion<K, Out>;
   /** Ask for the full reading. Never fails on unsure. */
-  detail(): ScoreQuestion<K, Scored<K>>;
+  detail(): DetailedScoreQuestion<Scored<K>>;
+}
+
+// A question asked for its full reading has NO `or`, and that is the whole point of these
+// three interfaces. `readAnswer` dispatches on `detailed` before it looks at a fallback, so a
+// value set after `.detail()` would be silently discarded; Rust says the same thing by not
+// implementing `Fallible` for `Detailed<K>`. They are exported for `src/ask.ts`, which needs
+// them in `Shape` and `Answered`, and are NOT re-exported from `src/index.ts`: a caller meets
+// one only as the return type of `detail()`, which is why the public surface stays at thirteen
+// values and twenty-three types.
+//
+// The choice and score ones are parameterised by the ANSWER rather than by the key, because
+// that is the type argument `Answered` reads straight back off the reference.
+
+/** A noul asked for its full reading. Answers {@link Verdict}. */
+export interface DetailedNoulQuestion {
+  /** Discriminant. */
+  readonly kind: "noul";
+  /** Merge a policy patch over this question's. */
+  with(policy: Policy): DetailedNoulQuestion;
+  /** `p \>= yesAbove` is yes. */
+  yesAbove(p: number): DetailedNoulQuestion;
+  /** `p \<= noBelow` is no. */
+  noBelow(p: number): DetailedNoulQuestion;
+  /** Describe what a yes and a no mean. A description, or a rubric carrying examples. */
+  criteria(yes: string | OptionRubric, no: string | OptionRubric): DetailedNoulQuestion;
+}
+
+/** A choice asked for its full reading. Answers {@link Ranked}. */
+export interface DetailedChoiceQuestion<Out> {
+  /** Discriminant. */
+  readonly kind: "choice";
+  /** Merge a policy patch over this question's. */
+  with(policy: Policy): DetailedChoiceQuestion<Out>;
+  /** `confidence \< minConfidence` is unsure. */
+  minConfidence(c: number): DetailedChoiceQuestion<Out>;
+}
+
+/** A score asked for its full reading. Answers {@link Scored}. */
+export interface DetailedScoreQuestion<Out> {
+  /** Discriminant. */
+  readonly kind: "score";
+  /** Merge a policy patch over this question's. */
+  with(policy: Policy): DetailedScoreQuestion<Out>;
+  /** `confidence \< minConfidence` is unsure. */
+  minConfidence(c: number): DetailedScoreQuestion<Out>;
 }
 
 /** Any question, for the shape mapper. */
 export type Question<Out = unknown> =
   NoulQuestion<Out> | ChoiceQuestion<string, Out> | ScoreQuestion<string, Out>;
 
-/** Any question, for the two internal entry points and for the shape mapper. */
-export type AnyQuestion = Question;
+/**
+ * Any question value the shape mapper may meet, for the two internal entry points.
+ *
+ * The three detailed shapes are members because `src/ask.ts` narrows a `Shape` with a
+ * predicate over this type: a member it left out would survive into the object branch, where
+ * `Object.entries` over an interface with no index signature widens to `any`. `encodeQuestion`
+ * and `readAnswer` re-check with `instanceof` before they trust any of them.
+ */
+export type AnyQuestion =
+  | Question
+  | DetailedNoulQuestion
+  | DetailedChoiceQuestion<unknown>
+  | DetailedScoreQuestion<unknown>;
 
 /** A choice answer in full: the pick, its confidence, and the whole distribution. */
 export interface Ranked<K extends string> {
@@ -290,7 +356,7 @@ class NoulImpl<Out> {
     renderPair(pair[0], pair[1]);
     return new NoulImpl({ ...this.#s, criteria: pair });
   }
-  detail(): NoulQuestion<Verdict> {
+  detail(): DetailedNoulQuestion {
     // A detailed reading never consults a fallback, so any `.or(..)` set before this is
     // dropped rather than carried forward, exactly as Rust's `Detailed<K>` drops it.
     return new NoulImpl<Verdict>({ ...this.#s, or: undefined, detailed: true });
@@ -389,7 +455,7 @@ class ChoiceImpl<K extends string, Out> {
   or(value: Out): ChoiceQuestion<K, Out> {
     return new ChoiceImpl({ ...this.#s, or: { value } });
   }
-  detail(): ChoiceQuestion<K, Ranked<K>> {
+  detail(): DetailedChoiceQuestion<Ranked<K>> {
     return new ChoiceImpl<K, Ranked<K>>({ ...this.#s, or: undefined, detailed: true });
   }
 
@@ -503,7 +569,7 @@ class ScoreImpl<K extends string, Out> {
   or(value: Out): ScoreQuestion<K, Out> {
     return new ScoreImpl({ ...this.#s, or: { value } });
   }
-  detail(): ScoreQuestion<K, Scored<K>> {
+  detail(): DetailedScoreQuestion<Scored<K>> {
     return new ScoreImpl<K, Scored<K>>({ ...this.#s, or: undefined, detailed: true });
   }
 
@@ -639,7 +705,8 @@ export const chooseAmong = (
     instructions,
     keys,
     rubrics,
-    fallbackKey: checkedOptions(keys, rubrics),
+    // Always `undefined`: `"runtime"` refuses a marked option rather than naming one.
+    fallbackKey: checkedOptions(keys, rubrics, "runtime"),
     policy: {},
     or: undefined,
     detailed: false,

@@ -1,7 +1,15 @@
 import { assertNever, configError, protocolError } from "./errors.js";
 import { encodeQuestion, readAnswer } from "./question.js";
-import type { AnyQuestion, ChoiceQuestion, NoulQuestion, ScoreQuestion } from "./question.js";
-import type { Outcome, Policy, Thresholds } from "./policy.js";
+import type {
+  AnyQuestion,
+  ChoiceQuestion,
+  DetailedChoiceQuestion,
+  DetailedNoulQuestion,
+  DetailedScoreQuestion,
+  NoulQuestion,
+  ScoreQuestion,
+} from "./question.js";
+import type { Outcome, Policy, Thresholds, Verdict } from "./policy.js";
 import type { WireQuestion } from "./api/wire.js";
 
 /** Anything `Guide.ask` can answer in one request. */
@@ -9,6 +17,9 @@ export type Shape =
   | NoulQuestion<unknown>
   | ChoiceQuestion<string, unknown>
   | ScoreQuestion<string, unknown>
+  | DetailedNoulQuestion
+  | DetailedChoiceQuestion<unknown>
+  | DetailedScoreQuestion<unknown>
   | readonly Shape[]
   | { readonly [k: string]: Shape };
 
@@ -26,13 +37,19 @@ export type Answered<S> =
       ? O
       : S extends ScoreQuestion<string, infer O>
         ? O
-        : S extends readonly unknown[]
-          ? number extends S["length"]
-            ? readonly Answered<S[number]>[]
-            : { readonly [I in keyof S]: Answered<S[I]> }
-          : S extends Readonly<Record<string, unknown>>
-            ? { readonly [K in keyof S]: Answered<S[K]> }
-            : never;
+        : S extends DetailedNoulQuestion
+          ? Verdict
+          : S extends DetailedChoiceQuestion<infer O>
+            ? O
+            : S extends DetailedScoreQuestion<infer O>
+              ? O
+              : S extends readonly unknown[]
+                ? number extends S["length"]
+                  ? readonly Answered<S[number]>[]
+                  : { readonly [I in keyof S]: Answered<S[I]> }
+                : S extends Readonly<Record<string, unknown>>
+                  ? { readonly [K in keyof S]: Answered<S[K]> }
+                  : never;
 
 /**
  * A `Claim` mirrors the shape the caller passed, with each question replaced by the id it was

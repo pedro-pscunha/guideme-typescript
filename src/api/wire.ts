@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { configError, protocolError } from "../errors.js";
-import { MAX_LEVELS, MIN_LEVELS } from "../scalars.js";
 import type { Answer } from "../policy.js";
 
 // `Answer` is owned by `src/policy.ts` and imported here, never the other way round: the pure
@@ -127,7 +126,11 @@ const questionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("score"),
     instructions: z.unknown(),
-    criteria: z.array(z.string()).min(MIN_LEVELS).max(MAX_LEVELS),
+    // A bare string array, exactly as `spec/schema/request.json` states it. No `.min` and no
+    // `.max`: the vendored schema carries no array bound, and inventing one here would make
+    // this package refuse a body the contract allows. The 2..=10 level rule is enforced in
+    // `ScoreImpl.encode`, which is where Rust enforces it too.
+    criteria: z.array(z.string()),
   }),
 ]);
 
