@@ -65,7 +65,9 @@ Each module survives the test.
   time. Without it `Out` appeared only in `or`'s parameter — bivariant, as a method — and in
   recursive return types, so it was a free label: `DetailedChoiceQuestion<number>` held a real
   `.detail()`, and a choice over one key set passed for a choice over another. The member makes
-  `Out` covariant, and through `detail()`'s return type it pins `K` too. It is **required**, so
+  `Out` covariant, and through `detail()`'s return type it pins `K` too; and because a detailed
+  noul's member is `Verdict` where a plain noul's is `boolean`, a plain `noul(..)` no longer
+  passes for a `DetailedNoulQuestion`. It is **required**, so
   an object literal with every method of a question is a type error, as a hand-built descriptor
   already was: no caller can write the key. The three implementation classes `declare` the same
   member, type only. The runtime guard stays as the second line: `encodeQuestion` refuses
@@ -173,11 +175,16 @@ Each module survives the test.
   application's copy. The peer is required, with no `peerDependenciesMeta`, because
   `src/telemetry.ts` imports the API at load and an absent optional peer would crash there.
   The floor is `1.9.0` and the dev copy is pinned there, so the gate tests the floor rather
-  than whatever is newest. `zod` never reaches the public surface, so it stays a regular
+  than whatever is newest. 1.9.0 is the oldest version the gate tests. The package uses only
+  `trace`, `context`, `SpanKind` and `SpanStatusCode` (and the `Attributes`, `Span` and
+  `Tracer` types), which exist since 1.0, so older 1.x likely works but is unverified; the
+  floor is a policy choice. `zod` never reaches the public surface, so it stays a regular
   dependency, but a caret: an exact pin forces a second copy on every application that uses
-  another 4.x. The lock pins what the gate builds; the non-required `latest-deps (unpinned)`
-  job installs the newest `zod` 4.x and API 1.x over it and runs the suite, so a new release in
-  range is tested before a user meets it.
+  another 4.x. The lock pins what the gate builds. The non-required `latest-deps (unpinned)`
+  job, in its own workflow that runs on every pull request, on `main` and weekly, installs the
+  newest `zod` 4.x and API 1.x over the lock, fails if either resolves to anything else, and
+  runs the suite, so a new release in range is tested before a user meets it, even in a week
+  with no commits.
 - **The `util.inspect` hook is installed on `ApiKey.prototype`, not written in the class body.**
   `console.log` and `util.inspect` read `Symbol.for("nodejs.util.inspect.custom")`, and
   `Symbol.for(..)` does not produce a `unique symbol`, so `isolatedDeclarations` cannot name it

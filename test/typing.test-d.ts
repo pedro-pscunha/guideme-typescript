@@ -391,6 +391,9 @@ test("illegal states are compiler errors", () => {
     detail: () => realNoul.detail(),
   });
 
+  // @ts-expect-error a noul answers a boolean; a detailed noul answers a Verdict
+  takesDetailedNoul(noul("Urgent?"));
+
   // @ts-expect-error nor is a detailed one: it still has to come from detail()
   takesDetailedNoul({
     kind: "noul",

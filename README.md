@@ -148,8 +148,8 @@ Node 22 or newer, or any runtime with `fetch`. The package is ESM only and ships
 types. `@opentelemetry/api` is a peer dependency: name it yourself, because npm installs a peer
 but does not add it to your `package.json`, and your own tracing setup imports it. If your
 application already has an API older than `1.9`, npm refuses the install (`ERESOLVE`); bun and
-pnpm warn, then use your copy. The one runtime dependency is `zod`. Neither appears on the
-public surface.
+pnpm warn, then use your copy. The one runtime dependency is `zod`. Neither it nor
+`@opentelemetry/api` appears on the public surface.
 
 Set `TYPESAFE_API_KEY` in the environment, or pass a key to `new Guide({ apiKey })`.
 
@@ -228,8 +228,8 @@ missed. `.detail()` skips the ladder and hands you the reading to decide yoursel
 it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does not compile,
 rather than compiling and discarding `x`.
 
-Every type a caller writes in a signature is exported by name, so none has to be spelled
-`ReturnType<..>`:
+Every type a caller writes in a signature, except the spec constraint of `choice` and `levels`,
+is exported by name, so none has to be spelled `ReturnType<..>`:
 
 - `.detail()` returns a `DetailedNoulQuestion`, a `DetailedChoiceQuestion<Ranked<K>>` or a
   `DetailedScoreQuestion<Scored<K>>`.
