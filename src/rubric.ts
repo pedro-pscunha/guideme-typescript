@@ -192,7 +192,13 @@ const checkShared = (
  *
  * Both sides are {@link OptionRubric}, never a {@link LevelRubric}: a yes and a no are two
  * alternatives rather than two positions on a scale, so either may carry counterexamples and a
- * level may not. Rust's `render_pair` takes the option-shaped rubric for the same reason.
+ * level may not.
+ *
+ * **Rust has no such split.** It has one `Rubric`, and `render_pair(yes: &Rubric, no: &Rubric)`
+ * takes it on both sides; the no-counterexample-on-a-level rule lives in `render_levels` as a
+ * runtime check and in `#[derive(Levels)]` as a compile error. The two types here are the
+ * TypeScript strengthening the goal asks for — the rule becomes a type error at every call
+ * site, on every path — and they refuse and accept exactly the declarations Rust does.
  */
 export const renderPair = (yes: OptionRubric, no: OptionRubric): readonly [string, string] => {
   checkShared(

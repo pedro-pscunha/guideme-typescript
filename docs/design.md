@@ -58,6 +58,14 @@ Each module survives the test.
   `src/index.ts`, so the surface stays at thirteen values and twenty-three types; a caller meets
   one only as `detail()`'s return type. They are parameterised by the **answer** rather than by
   the key, because that is the type argument `Answered` reads straight back off the reference.
+- **Two rubric types where Rust has one.** Rust's `Rubric` is a single struct used in every
+  rubric position, and "a level carries no counterexample" is a check inside `render_levels`
+  plus a compile error inside `#[derive(Levels)]`. Here `option(..)` returns an `OptionRubric`
+  and `level(..)` a `LevelRubric`, `LevelParts` has no `counterexamples` field, and every
+  signature that takes a level takes the second type — so the rule is a type error at the call
+  site on every path, which is the strengthening the goal asks for. The runtime check in
+  `renderLevels` stays, for a value laundered through `unknown`. Nothing about which
+  declarations are legal changed, which is what keeps the two SDKs one contract.
 - **A runtime choice has two rungs.** `chooseAmong` answers a `Key` and there is no descriptor
   to hold a marked option, exactly as Rust's `impl Options for Key` names no fallback variant.
   A `fallback()` value handed to it is a `config` error rather than a silent no-op: a rung the

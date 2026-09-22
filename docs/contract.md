@@ -144,7 +144,7 @@ written against. `scoreLevels` needs no equivalent, because a level has no fallb
 The rung that does exist is `.or(key)`. `test/rubric-rules.test.ts` carries the refusal as row
 14 of its table.
 
-## 9. Three things this SDK holds with the compiler that the others hold with a test
+## 9. Four things this SDK holds with the compiler that the others hold with a test
 
 Not divergences — the same contract, checked earlier.
 
@@ -158,6 +158,16 @@ belongs in the caller's code.
 `http.response.status_code` and `error.type` is present on a retry event. The event's argument
 type is a union of the two shapes rather than two optional fields, so an event with both or
 with neither cannot be constructed.
+
+**A counterexample on a level.** Rust has **one** `Rubric` type: `render_pair` takes it on both
+sides of a noul's criteria, `render_options` and `render_levels` take the same one, and the rule
+that a level carries no counterexample lives in `render_levels` as a runtime check and in
+`#[derive(Levels)]` as a compile error. This SDK splits the type in two, `OptionRubric` and
+`LevelRubric`, which is the strengthening the goal asks for rather than a mirror of Rust: the
+rule becomes a type error at every call site that takes a level, on every path, and `level(..)`
+has no `counterexamples` parameter to pass. `renderLevels` keeps the runtime check anyway, for a
+value handed in through `unknown` that the type system never saw. **Legality is identical** — a
+declaration either SDK refuses, the other refuses.
 
 **A detailed question has no unsure rung.** `.detail()` skips the ladder, so a fallback set
 after it would be discarded without a word. Rust says this by not implementing `Fallible` for
