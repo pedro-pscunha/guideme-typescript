@@ -230,6 +230,17 @@ test("a failure marks the ask span and never emits an ERROR log", async () => {
   expect(failed?.attributes["error.type"]).toBe("invalid");
   expect(failed?.status.message).toBe("invalid request: the 422 body is on the returned error");
   expect(serialiseSpans(exporter.getFinishedSpans())).not.toContain(secret);
+
+  // A failure that is not a GuidemeError is labelled by its own class, never passed off as a
+  // transport failure. Here an injected `fetch` breaks its contract and resolves to nothing.
+  exporter.reset();
+  const broken: typeof globalThis.fetch = () => Promise.resolve(null as unknown as Response);
+  const misbehaving = new Guide({ apiKey: new ApiKey("k"), fetch: broken, maxRetries: 0 });
+  await expect(misbehaving.ask(noul("Urgent?"), "x")).rejects.toBeInstanceOf(TypeError);
+  const [odd] = spansNamed("guideme.ask");
+  expect(odd?.attributes["error.type"], "error.type is the class of a foreign failure").toBe(
+    "TypeError",
+  );
 });
 
 test("state is user data: bytes always, content only when asked for", async () => {

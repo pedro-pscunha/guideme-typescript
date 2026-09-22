@@ -56,6 +56,16 @@ export const model = (id: string): Model => {
 };
 
 /**
+ * Brand a model name the API sent. The same brand as {@link model}, refused on the same blank
+ * test, but a `protocol` error: here the blank name is the API's, not the caller's.
+ */
+export const servedModel = (id: string): Model => {
+  if (isBlank(id)) throw protocolError("the API named a blank model");
+  // eslint-disable-next-line no-restricted-syntax -- checked on the line above; the wire's one place the brand is applied
+  return id as Model;
+};
+
+/**
  * Brand a runtime option key. **No check is performed here, and none is possible:** any string
  * is a legal option key. The invariant that makes a `Key` meaningful — that it names an option
  * in the rubric — is established by the only caller, `ChoiceImpl`'s ranked reader in
@@ -100,6 +110,13 @@ const INSPECT = Symbol.for("nodejs.util.inspect.custom");
 export class ApiKey {
   readonly #value: string;
 
+  /**
+   * Wrap a key. It is kept exactly as written, never trimmed.
+   *
+   * @param value - The key, as TypeSafe issued it.
+   * @throws A `config` `GuidemeError` when the key is blank: empty once Unicode `White_Space`
+   * is removed from both ends.
+   */
   constructor(value: string) {
     // Refused, never trimmed, and a `config` error for the same reason `model()` raises one:
     // a blank key is the caller's mistake, not the API changing shape.

@@ -4,6 +4,7 @@ import { resolve, thresholds } from "../src/policy.js";
 import type { ChoiceOutcome, NoulOutcome, Outcome, ScoreOutcome } from "../src/policy.js";
 import { compareByCodePoint } from "../src/scalars.js";
 import { option, render } from "../src/rubric.js";
+import { brandAnswer } from "./support/fixtures.js";
 
 const unit = fc.double({ min: 0, max: 1, noNaN: true, noDefaultInfinity: true });
 const band = fc.tuple(unit, unit).map(([a, b]) => (a <= b ? ([a, b] as const) : ([b, a] as const)));
@@ -28,7 +29,7 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
   fc.assert(
     fc.property(unit, band, (p, [noBelow, yesAbove]) => {
       const t = thresholds(yesAbove, noBelow, 0);
-      const out = noulOutcome(resolve({ type: "noul", noul: p }, t));
+      const out = noulOutcome(resolve(brandAnswer({ type: "noul", noul: p }), t));
       const expected = p >= yesAbove ? "yes" : p <= noBelow ? "no" : "unsure";
       expect(out.verdict, `p=${String(p)} against [${String(noBelow)}, ${String(yesAbove)}]`).toBe(
         expected,
@@ -42,8 +43,8 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
       const t = thresholds(yesAbove, noBelow, 0);
       const lo = Math.min(a, b);
       const hi = Math.max(a, b);
-      const l = noulOutcome(resolve({ type: "noul", noul: lo }, t));
-      const h = noulOutcome(resolve({ type: "noul", noul: hi }, t));
+      const l = noulOutcome(resolve(brandAnswer({ type: "noul", noul: lo }), t));
+      const h = noulOutcome(resolve(brandAnswer({ type: "noul", noul: hi }), t));
       return order[l.verdict] <= order[h.verdict];
     }),
   );
@@ -52,8 +53,8 @@ test("noul: yes above the top edge, no below the bottom, unsure strictly between
     fc.property(unit, band, (p, [noBelow, yesAbove]) => {
       const narrow = thresholds(yesAbove, noBelow, 0);
       const wide = thresholds(Math.min(1, yesAbove + 0.1), Math.max(0, noBelow - 0.1), 0);
-      const n = noulOutcome(resolve({ type: "noul", noul: p }, narrow));
-      const w = noulOutcome(resolve({ type: "noul", noul: p }, wide));
+      const n = noulOutcome(resolve(brandAnswer({ type: "noul", noul: p }), narrow));
+      const w = noulOutcome(resolve(brandAnswer({ type: "noul", noul: p }), wide));
       return n.verdict === "unsure" ? w.verdict === "unsure" : true;
     }),
   );
@@ -101,7 +102,7 @@ test("choice: unsure iff confidence < minConfidence, and ranked is descending th
       const chosen = keys[0] ?? "";
       const t = thresholds(0.5, 0.5, minConfidence);
       const out = choiceOutcome(
-        resolve({ type: "choice", choice: chosen, probabilities, confidence: c }, t),
+        resolve(brandAnswer({ type: "choice", choice: chosen, probabilities, confidence: c }), t),
       );
       expect(out.unsure, "unsure iff confidence < minConfidence").toBe(c < minConfidence);
       expect(out.ranked, "every option is ranked").toHaveLength(keys.length);
@@ -125,12 +126,12 @@ test("choice: unsure iff confidence < minConfidence, and ranked is descending th
   // which is the opposite of the answer.
   const tied = choiceOutcome(
     resolve(
-      {
+      brandAnswer({
         type: "choice",
         choice: bmpMax,
         probabilities: { [beyondBmp]: 0.5, [bmpMax]: 0.5 },
         confidence: 1,
-      },
+      }),
       thresholds(0.5, 0.5, 0),
     ),
   );
@@ -144,7 +145,7 @@ test("score: index is the argmax, ties to the lowest", () => {
       const probabilities = Object.fromEntries(ps.map((p, i) => [String(i), p]));
       const out = scoreOutcome(
         resolve(
-          { type: "score", score: 0, legend, probabilities, confidence: c },
+          brandAnswer({ type: "score", score: 0, legend, probabilities, confidence: c }),
           thresholds(0.5, 0.5, 0),
         ),
       );
@@ -155,13 +156,13 @@ test("score: index is the argmax, ties to the lowest", () => {
   // The tie, stated once without the generator: two equal levels resolve to the lower.
   const tie = scoreOutcome(
     resolve(
-      {
+      brandAnswer({
         type: "score",
         score: 0.5,
         legend: { "0": "low", "1": "high" },
         probabilities: { "0": 0.5, "1": 0.5 },
         confidence: 1,
-      },
+      }),
       thresholds(0.5, 0.5, 0),
     ),
   );

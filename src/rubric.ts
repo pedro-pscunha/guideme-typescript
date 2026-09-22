@@ -11,7 +11,9 @@ import { isBlank } from "./scalars.js";
 
 // Duplicate: exact string equality, no trimming, no case folding, no Unicode normalisation.
 // NEVER a Set of normalised keys and NEVER `localeCompare`: `"a"` and `" a"` are two different
-// examples and both are legal.
+// examples and both are legal. Rules 4, 5-7 and 8 all ask this one question — within a clause,
+// across rubrics, and between a rubric's examples and its counterexamples — so all three call
+// this, and the definition lives once.
 const isDuplicate = (earlier: readonly string[], item: string): boolean =>
   earlier.some((seen) => seen === item);
 
@@ -148,7 +150,7 @@ export const render = (r: AnyRubric): string => {
   checkClause(counterexamples, "counterexample");
   // Rule 8.
   for (const example of r.examples) {
-    if (counterexamples.some((c) => c === example)) {
+    if (isDuplicate(counterexamples, example)) {
       throw configError(
         `${JSON.stringify(example)} is both an example and a counterexample; it cannot be in and out of the same option`,
       );
@@ -177,7 +179,7 @@ const checkShared = (
   for (const [i, [label, here]] of labelled.entries()) {
     for (const example of here.examples) {
       for (const [earlierLabel, earlier] of labelled.slice(0, i)) {
-        if (earlier.examples.some((e) => e === example)) {
+        if (isDuplicate(earlier.examples, example)) {
           throw configError(
             `${JSON.stringify(example)} is an example of both ${earlierLabel} and ${label}; an input belongs to one ${noun}`,
           );

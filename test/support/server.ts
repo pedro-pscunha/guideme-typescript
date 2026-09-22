@@ -18,7 +18,7 @@ export interface Received {
 export type Reply =
   | { readonly status: number; readonly body?: string; readonly headers?: Record<string, string> }
   | { readonly hang: true }
-  | { readonly cutMidBody: true };
+  | { readonly cutMidBody: true; readonly status?: number };
 
 /** A real local server on port 0, driven by a queue of replies. */
 export interface TestServer {
@@ -35,6 +35,22 @@ const portOf = (server: http.Server): number => {
     throw new Error("the test server is not listening on a TCP port");
   }
   return address.port;
+};
+
+/** Send one reply: a status and body, nothing at all, or a body cut off part way. */
+const answer = (res: http.ServerResponse, reply: Reply): void => {
+  if ("hang" in reply) return; // never respond; the client's own timeout must fire
+  if ("cutMidBody" in reply) {
+    res.writeHead(reply.status ?? 200, {
+      "content-type": "application/json",
+      "content-length": "1000",
+    });
+    res.write('{"model":"jev-1.13.0","answers"');
+    setTimeout(() => res.socket?.destroy(), 10);
+    return;
+  }
+  res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
+  res.end(reply.body ?? "");
 };
 
 /**
@@ -60,15 +76,7 @@ export const startServer = async (replies: readonly Reply[]): Promise<TestServer
         res.writeHead(500).end();
         return;
       }
-      if ("hang" in reply) return; // never respond; the client's own timeout must fire
-      if ("cutMidBody" in reply) {
-        res.writeHead(200, { "content-type": "application/json", "content-length": "1000" });
-        res.write('{"model":"jev-1.13.0","answers"');
-        setTimeout(() => res.socket?.destroy(), 10);
-        return;
-      }
-      res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
-      res.end(reply.body ?? "");
+      answer(res, reply);
     });
   });
   await new Promise<void>((resolve) => {

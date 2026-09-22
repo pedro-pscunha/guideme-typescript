@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import vectors from "../spec/vectors/policy.json" with { type: "json" };
-import { resolve, thresholds, type Answer, type Thresholds } from "../src/policy.js";
+import { resolve, thresholds, type Thresholds } from "../src/policy.js";
 import { GuidemeError } from "../src/errors.js";
+import { brandAnswer, type RawAnswer } from "./support/fixtures.js";
 
 interface VectorThresholds {
   readonly yes_above: number;
@@ -9,7 +10,7 @@ interface VectorThresholds {
   readonly min_confidence: number;
 }
 interface Vector {
-  readonly answer: Answer;
+  readonly answer: RawAnswer;
   readonly thresholds: VectorThresholds;
   readonly outcome?: unknown;
   readonly error?: string;
@@ -36,14 +37,14 @@ expect(outcomes, "39 of them resolve to an outcome").toHaveLength(39);
 expect(errors, "3 of them are protocol violations").toHaveLength(3);
 
 test.each(outcomes)("vector $i resolves to its golden outcome", ({ v }) => {
-  const got = resolve(v.answer, settled(v.thresholds));
+  const got = resolve(brandAnswer(v.answer), settled(v.thresholds));
   expect(JSON.parse(JSON.stringify(got))).toEqual(v.outcome);
 });
 
 test.each(errors)("vector $i is a protocol violation", ({ v }) => {
   let thrown: unknown;
   try {
-    resolve(v.answer, settled(v.thresholds));
+    resolve(brandAnswer(v.answer), settled(v.thresholds));
   } catch (e) {
     thrown = e;
   }

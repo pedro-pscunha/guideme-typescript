@@ -1,5 +1,5 @@
 import { configError, protocolError, assertNever } from "./errors.js";
-import { compareByCodePoint, confidence, probability, MAX_LEVELS, MIN_LEVELS } from "./scalars.js";
+import { compareByCodePoint, MAX_LEVELS, MIN_LEVELS } from "./scalars.js";
 import type { Confidence, Probability } from "./scalars.js";
 
 /**
@@ -7,21 +7,24 @@ import type { Confidence, Probability } from "./scalars.js";
  * says `resolve` takes plain typed objects rather than anything the wire layer produced, and
  * `src/api/wire.ts` imports this and parses into it. The field names are the wire's because
  * the wire is where the values come from; nothing else about this type is the wire's.
+ *
+ * Every probability and confidence is already a {@link Probability} or {@link Confidence}:
+ * validated once, where the wire parses them, so `resolve` never checks a range again.
  */
 export type Answer =
-  | { readonly type: "noul"; readonly noul: number }
+  | { readonly type: "noul"; readonly noul: Probability }
   | {
       readonly type: "choice";
       readonly choice: string;
-      readonly probabilities: Readonly<Record<string, number>>;
-      readonly confidence: number;
+      readonly probabilities: Readonly<Record<string, Probability>>;
+      readonly confidence: Confidence;
     }
   | {
       readonly type: "score";
       readonly score: number;
       readonly legend: Readonly<Record<string, string>>;
-      readonly probabilities: Readonly<Record<string, number>>;
-      readonly confidence: number;
+      readonly probabilities: Readonly<Record<string, Probability>>;
+      readonly confidence: Confidence;
     };
 
 /**
@@ -170,7 +173,7 @@ const at = <T>(map: Readonly<Record<string, T>>, k: string, what: string): T => 
 
 /** The noul arm of {@link resolve}. */
 const resolveNoul = (answer: Extract<Answer, { type: "noul" }>, t: Thresholds): NoulOutcome => {
-  const p = probability(answer.noul);
+  const p = answer.noul;
   const verdict = p >= t.yesAbove ? "yes" : p <= t.noBelow ? "no" : "unsure";
   return Object.freeze({ kind: "noul", verdict, p });
 };
@@ -187,10 +190,10 @@ const resolveChoice = (
   // guideme/src/policy.rs: sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0))).
   // Descending probability, then ascending key. Never rely on object key order: a JS
   // object preserves insertion order for non-integer keys while Rust's BTreeMap sorts.
-  const ranked = Object.entries(probabilities)
-    .map(([k, p]) => [k, probability(p)] as const)
-    .sort((a, b) => (b[1] === a[1] ? compareByCodePoint(a[0], b[0]) : b[1] - a[1]));
-  const c = confidence(answer.confidence);
+  const ranked = Object.entries(probabilities).sort((a, b) =>
+    b[1] === a[1] ? compareByCodePoint(a[0], b[0]) : b[1] - a[1],
+  );
+  const c = answer.confidence;
   return Object.freeze({
     kind: "choice",
     key: answer.choice,
@@ -233,11 +236,9 @@ const resolveScore = (answer: Extract<Answer, { type: "score" }>, t: Thresholds)
   if (!(answer.score >= 0 && answer.score <= max)) {
     throw protocolError(`score ${String(answer.score)} is outside 0..=${String(max)}`);
   }
-  const distribution = legendKeys.map((k) =>
-    probability(at(answer.probabilities, k, "probabilities")),
-  );
+  const distribution = legendKeys.map((k) => at(answer.probabilities, k, "probabilities"));
   const legend = legendKeys.map((k) => at(answer.legend, k, "legend"));
-  const c = confidence(answer.confidence);
+  const c = answer.confidence;
   return Object.freeze({
     kind: "score",
     index: argmax(distribution),

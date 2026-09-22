@@ -16,7 +16,7 @@ export type ErrorKind =
 
 /** Options a {@link GuidemeError} may carry beyond its message. */
 export interface GuidemeErrorOptions {
-  /** The underlying failure, for a transport error. */
+  /** The underlying failure: a transport error's, a parse failure's, an unreadable body's. */
   readonly cause?: unknown;
   /** The `retry-after` the API last sent, in milliseconds. Only on rate limits and overloads. */
   readonly retryAfterMs?: number;
@@ -45,6 +45,15 @@ export class GuidemeError extends Error {
   /** The question id, on `unsure`. */
   readonly question: string | undefined;
 
+  /**
+   * Build an error. This package raises every one of these itself; the constructor is public so
+   * a test double can produce the same class a caller branches on.
+   *
+   * @param kind - Which failure, and the `error.type` the span records.
+   * @param message - The human-readable account. It never contains the API key.
+   * @param options - The cause, the retry-after, the status, the body or the question id, each
+   * only on the kinds its field documents.
+   */
   constructor(kind: ErrorKind, message: string, options?: GuidemeErrorOptions) {
     super(message, options?.cause === undefined ? {} : { cause: options.cause });
     this.name = "GuidemeError";
@@ -60,9 +69,13 @@ export class GuidemeError extends Error {
 export const configError = (detail: string): GuidemeError =>
   new GuidemeError("config", `configuration error: ${detail}`);
 
-/** The response violated the contract. */
-export const protocolError = (detail: string): GuidemeError =>
-  new GuidemeError("protocol", `protocol violation: ${detail}`);
+/** The response violated the contract. `cause` is the parser's own error, when there is one. */
+export const protocolError = (detail: string, cause?: unknown): GuidemeError =>
+  new GuidemeError(
+    "protocol",
+    `protocol violation: ${detail}`,
+    cause === undefined ? undefined : { cause },
+  );
 
 /** A connection, TLS or body failure. */
 export const transportError = (detail: string, cause: unknown): GuidemeError =>

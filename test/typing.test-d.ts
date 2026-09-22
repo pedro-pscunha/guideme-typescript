@@ -43,6 +43,7 @@ import {
   type Usage,
   type Verdict,
 } from "../src/index.js";
+import type { Answer } from "../src/policy.js";
 
 const Department = choice({
   billing: option("Payments, invoicing, refunds", {
@@ -138,6 +139,21 @@ test("the runtime constructors yield Key and Rank", async () => {
   expectTypeOf(await guide.ask(q, ticket)).toEqualTypeOf<Key>();
   const r = scoreLevels("How severe?", ["low", level("high", { examples: ["outage"] })]);
   expectTypeOf(await guide.ask(r, ticket)).toEqualTypeOf<Rank>();
+});
+
+test("probabilities, confidences and model names are branded where the wire parses them", () => {
+  // `resolve` takes these types, so an unvalidated number cannot reach the policy: the only
+  // way to make one is the brand function the wire's schema runs.
+  expectTypeOf<Extract<Answer, { type: "noul" }>["noul"]>().toEqualTypeOf<Probability>();
+  expectTypeOf<Extract<Answer, { type: "choice" }>["probabilities"]>().toEqualTypeOf<
+    Readonly<Record<string, Probability>>
+  >();
+  expectTypeOf<Extract<Answer, { type: "choice" }>["confidence"]>().toEqualTypeOf<Confidence>();
+  expectTypeOf<Extract<Answer, { type: "score" }>["probabilities"]>().toEqualTypeOf<
+    Readonly<Record<string, Probability>>
+  >();
+  expectTypeOf<Extract<Answer, { type: "score" }>["confidence"]>().toEqualTypeOf<Confidence>();
+  expectTypeOf<ModelInfo["name"]>().toEqualTypeOf<Model>();
 });
 
 test("askWithReceipt wraps every shape", async () => {
@@ -238,6 +254,12 @@ test("illegal states are compiler errors", () => {
       // @ts-expect-error a switch that misses a key leaves "sales", which is not never
       assertNever(dept);
   }
+
+  // @ts-expect-error a guide needs an API key: the key-less options a derived guide is built from are not public
+  new Guide({});
+
+  // @ts-expect-error the client a derived guide shares is not a public argument
+  new Guide({ apiKey: new ApiKey("sk-test") }, {});
 
   // @ts-expect-error levels() rejects an OptionRubric by type: a level is not an option
   levels({ low: option("low"), high: "high" });

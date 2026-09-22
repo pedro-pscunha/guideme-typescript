@@ -63,7 +63,7 @@ same major and an equal or newer minor. An application whose own `@opentelemetry
 | `guideme.questions`             | number         | questions in the request                             |
 | `guideme.state.bytes`           | number         | UTF-8 **byte** length of the state JSON              |
 | `guideme.state`                 | string         | the state JSON, only when `recordState: true` is set |
-| `error.type`                    | string         | `GuidemeError.kind`, only when the ask failed        |
+| `error.type`                    | string         | `GuidemeError.kind` (see Errors), only on failure    |
 
 The span's kind is `SpanKind.CLIENT` and a failure sets the span status to
 `SpanStatusCode.ERROR` with the message as its description. Rust carries those as the fields
@@ -159,7 +159,12 @@ That is what dashboards filter on, and it keeps the caller in charge of whether 
 failure is logged.
 
 `error.type` values on the ask span: `auth`, `invalid`, `rate_limited`, `overloaded`,
-`transport`, `unexpected_status`, `protocol`, `unsure`, `config`. On an HTTP span it is the
+`transport`, `unexpected_status`, `protocol`, `unsure`, `config`. A failure that is not a
+`GuidemeError` — a bug, or an injected `fetch` that breaks its contract — is rethrown as it is
+and labelled by its class name (`TypeError`), or `_OTHER` for a thrown value that is not an
+`Error`, which is the OpenTelemetry `error.type` convention's fallback. It is never labelled
+`transport`: that value means the API could not be reached, and a dashboard reading a bug as
+network trouble would be looking in the wrong place. On an HTTP span it is the
 status code as text on a non-200, otherwise one of those names — a `200` whose body failed to
 read or decode is marked with `transport` or `protocol`, not with `200`.
 

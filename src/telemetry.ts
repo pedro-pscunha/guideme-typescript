@@ -257,10 +257,18 @@ const describe = (e: GuidemeError): string => {
     : `unexpected status ${String(e.status ?? 0)}: the body is on the returned error`;
 };
 
+/**
+ * `error.type` for a failure this package did not classify: the thrown class's name, or
+ * `_OTHER` for a thrown non-`Error`, which is the OpenTelemetry convention's own fallback.
+ * Never `"transport"`: that names a failure to reach the API, and a bug is not one.
+ */
+const foreignType = (error: unknown): string =>
+  error instanceof Error && error.name !== "" ? error.name : "_OTHER";
+
 /** Mark the ask span failed, with a description that never carries a response body. */
 export const failAskSpan = (handle: SpanHandle, error: unknown): void => {
   const e = error instanceof GuidemeError ? error : undefined;
-  handle.span.setAttribute("error.type", e?.kind ?? "transport");
+  handle.span.setAttribute("error.type", e?.kind ?? foreignType(error));
   handle.span.setStatus({
     code: SpanStatusCode.ERROR,
     message: e === undefined ? "unknown failure" : describe(e),

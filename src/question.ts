@@ -59,6 +59,28 @@ interface ChoiceDescriptor<K extends string> {
 export type Option<D> = D extends ChoiceDescriptor<infer K> ? K : never;
 
 /**
+ * Each key with its rubric, walked together. The two arrays are built side by side, so a
+ * length mismatch means a descriptor was assembled by hand — by JavaScript, since the type
+ * cannot express one — and it is refused rather than padded: a missing rubric is not `null`,
+ * which means "an option described not at all", and filling one in would invent a declaration.
+ */
+const paired = <K extends string>(
+  keys: readonly K[],
+  rubrics: readonly (OptionRubric | null)[],
+): (readonly [K, OptionRubric | null])[] => {
+  const pairs = keys.flatMap((k, i) => {
+    const r = rubrics[i];
+    return r === undefined ? [] : [[k, r] as const];
+  });
+  if (pairs.length !== keys.length || rubrics.length !== keys.length) {
+    throw configError(
+      `a choice has ${String(keys.length)} keys but ${String(rubrics.length)} rubrics`,
+    );
+  }
+  return pairs;
+};
+
+/**
  * Check a whole set of options and name the one marked as the fallback.
  *
  * Shared by {@link choice} and {@link chooseAmong} rather than written twice: both hold the
@@ -85,7 +107,7 @@ const checkedOptions = <K extends string>(
       `a choice may have at most one fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} are all marked`,
     );
   }
-  renderOptions(keys.map((k, i) => [k, rubrics[i] ?? null] as const));
+  renderOptions(paired(keys, rubrics));
   return marked[0];
 };
 
@@ -465,7 +487,7 @@ class ChoiceImpl<K extends string, Out> {
     if (keys.length > MAX_OPTIONS) {
       throw configError(`a choice may have at most ${String(MAX_OPTIONS)} options`);
     }
-    const rendered = renderOptions(keys.map((k, i) => [k, this.#s.rubrics[i] ?? null] as const));
+    const rendered = renderOptions(paired(keys, this.#s.rubrics));
     const criteria: Record<string, string | null> = {};
     for (const [name, text] of rendered) criteria[name] = text;
     if (Object.keys(criteria).length !== keys.length) {

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { configError, protocolError } from "../errors.js";
 import type { Answer } from "../policy.js";
+import { confidence, probability, servedModel } from "../scalars.js";
+import type { Model } from "../scalars.js";
 
 // `Answer` is owned by `src/policy.ts` and imported here, never the other way round: the pure
 // decision layer must not depend on the HTTP layer. This module parses INTO that type.
@@ -52,7 +54,7 @@ export interface WireUsage {
 /** The response body of `POST /v1/systemone`. */
 export interface WireResponse {
   /** The versioned model that answered, even when an alias was requested. */
-  readonly model: string;
+  readonly model: Model;
   /** One answer per question, same ids. */
   readonly answers: Readonly<Record<string, Answer>>;
   /** Token usage. */
@@ -62,7 +64,7 @@ export interface WireResponse {
 /** One entry from `GET /v1/models`. */
 export interface WireModelInfo {
   /** Name or alias accepted by the `model` field. */
-  readonly name: string;
+  readonly name: Model;
   /** What it is for. */
   readonly description: string;
   /** Release date as the API reports it. */
@@ -71,28 +73,36 @@ export interface WireModelInfo {
 
 // ---- module-private schemas -------------------------------------------------------------
 
+// The range is checked by the schema, so a violation is reported with its path; the brand is
+// then applied by the one function that may apply it. This is the only place a response's
+// probabilities and confidences are validated — `resolve` takes the branded types and never
+// checks a range again.
 const unitInterval = z.number().min(0).max(1);
+const probabilityField = unitInterval.transform(probability);
+const confidenceField = unitInterval.transform(confidence);
+// A blank name is refused by `servedModel` as a `protocol` error, thrown out of the parse.
+const modelField = z.string().transform(servedModel);
 const levelKey = z.string().regex(/^\d+$/u);
 
 const answerSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("noul"), noul: unitInterval }),
+  z.object({ type: z.literal("noul"), noul: probabilityField }),
   z.object({
     type: z.literal("choice"),
     choice: z.string(),
-    probabilities: z.record(z.string(), unitInterval),
-    confidence: unitInterval,
+    probabilities: z.record(z.string(), probabilityField),
+    confidence: confidenceField,
   }),
   z.object({
     type: z.literal("score"),
     score: z.number(),
     legend: z.record(levelKey, z.string()),
-    probabilities: z.record(levelKey, unitInterval),
-    confidence: unitInterval,
+    probabilities: z.record(levelKey, probabilityField),
+    confidence: confidenceField,
   }),
 ]);
 
 const responseSchema = z.object({
-  model: z.string().min(1),
+  model: modelField,
   answers: z.record(z.string(), answerSchema),
   usage: z.object({
     input_tokens: z.number().int().min(0),
@@ -103,7 +113,7 @@ const responseSchema = z.object({
 const modelsSchema = z.object({
   models: z.array(
     z.object({
-      name: z.string(),
+      name: modelField,
       description: z.string(),
       release_date: z.string(),
     }),
@@ -168,7 +178,9 @@ export const parseResponse = (v: unknown): WireResponse => {
 export const schemaShapes = (): Readonly<Record<"request" | "response", unknown>> =>
   Object.freeze({
     request: z.toJSONSchema(requestSchema),
-    response: z.toJSONSchema(responseSchema),
+    // The input side: what the wire carries, before the brands are applied. A transform has no
+    // JSON Schema of its own, and the brand is not something the wire can say anyway.
+    response: z.toJSONSchema(responseSchema, { io: "input" }),
   });
 
 /** Narrow an unknown `GET /v1/models` body. A violation is a `protocol` error. */

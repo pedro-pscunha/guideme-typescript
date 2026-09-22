@@ -60,18 +60,45 @@ const wait = async (ms: number): Promise<void> => {
   });
 };
 
-/** 401, 422 and every other undefined status, including a 3xx this client did not follow. */
-const classify = (status: number, body: string): GuidemeError => {
+/** An error response's body as it was read: the text, or why it could not be read. */
+type ErrorBody = { readonly text: string } | { readonly unreadable: unknown };
+
+/**
+ * 401, 422 and every other undefined status, including a 3xx this client did not follow.
+ *
+ * The status decides the kind whether or not the body could be read. An unreadable body is
+ * never replaced by an empty string: `body` stays absent, the message says so, and the read
+ * failure is the cause.
+ */
+const classify = (status: number, read: ErrorBody): GuidemeError => {
+  const [shown, carried] =
+    "text" in read
+      ? [read.text, { body: read.text }]
+      : ["(the body could not be read)", { cause: read.unreadable }];
   if (status === 401) {
-    return new GuidemeError("auth", "unauthorized: missing or invalid TypeSafe API key");
+    // A 401 carries no body, read or not; an unreadable one still carries its cause.
+    return new GuidemeError(
+      "auth",
+      "unauthorized: missing or invalid TypeSafe API key",
+      "text" in read ? undefined : { cause: read.unreadable },
+    );
   }
   if (status === 422) {
-    return new GuidemeError("invalid", `invalid request: ${body}`, { body });
+    return new GuidemeError("invalid", `invalid request: ${shown}`, carried);
   }
-  return new GuidemeError("unexpected_status", `unexpected status ${String(status)}: ${body}`, {
+  return new GuidemeError("unexpected_status", `unexpected status ${String(status)}: ${shown}`, {
     status,
-    body,
+    ...carried,
   });
+};
+
+/** Read an error response's body, keeping a read failure rather than swallowing it. */
+const readErrorBody = async (response: Response): Promise<ErrorBody> => {
+  try {
+    return { text: await response.text() };
+  } catch (e) {
+    return { unreadable: e };
+  }
 };
 
 /** 429 and 529, once the budget is gone or the wait the API asked for is too long. */
@@ -122,7 +149,7 @@ const readBody = async <T>(opts: Attempt<T>, response: Response): Promise<T> => 
   try {
     json = JSON.parse(text);
   } catch (e) {
-    throw protocolError(`response body is not JSON: ${String(e)}`);
+    throw protocolError(`response body is not JSON: ${String(e)}`, e);
   }
   return opts.parse(json);
 };
@@ -202,9 +229,9 @@ const afterStatus = async (
 ): Promise<void> => {
   failSpan(span, String(response.status), `HTTP ${String(response.status)}`);
   if (response.status !== 429 && response.status !== 529) {
-    const body = await response.text().catch(() => "");
+    const read = await readErrorBody(response);
     span.end();
-    throw classify(response.status, body);
+    throw classify(response.status, read);
   }
   const retryAfterMs = parseRetryAfter(response.headers);
   if (last || (retryAfterMs !== undefined && retryAfterMs > MAX_BACKOFF_MS)) {
@@ -270,12 +297,18 @@ const portOf = (parsed: URL): number => {
   return 0;
 };
 
+/** Where every request goes: the trimmed origin, and the host and port the spans record. */
+interface Origin {
+  readonly trimmed: string;
+  readonly host: string;
+  readonly port: number;
+}
+
 /**
- * Build a client. The base URL must parse, must have a host and a port, and must carry no
- * credentials: it is recorded on every request span as `url.full`.
+ * The base URL must parse, must have a host and a port, and must carry no credentials: it is
+ * recorded on every request span as `url.full`.
  */
-export const createClient = (options: ClientOptions): Client => {
-  const raw = options.baseUrl ?? DEFAULT_BASE_URL;
+const originOf = (raw: string): Origin => {
   const trimmed = raw.replace(/\/+$/u, "");
   let parsed: URL;
   try {
@@ -289,26 +322,72 @@ export const createClient = (options: ClientOptions): Client => {
   if (parsed.username !== "" || parsed.password !== "") {
     throw configError("base_url must not carry credentials; use the api_key");
   }
-  if (parsed.hostname === "") {
-    throw configError(`base_url ${JSON.stringify(trimmed)} needs a host and a port`);
-  }
   const port = portOf(parsed);
-  if (port === 0) {
+  if (parsed.hostname === "" || port === 0) {
     throw configError(`base_url ${JSON.stringify(trimmed)} needs a host and a port`);
   }
+  return { trimmed, host: parsed.hostname, port };
+};
+
+/** The retry budget, the backoff base and the per-attempt deadline, each as it will be used. */
+interface Budget {
+  readonly maxRetries: number;
+  readonly backoff: number;
+  readonly timeout: number;
+}
+
+/** `value`, or a `config` error saying what it had to be. */
+const checked = (
+  name: string,
+  value: number,
+  valid: (n: number) => boolean,
+  what: string,
+): number => {
+  if (!valid(value)) throw configError(`${name} = ${String(value)} is not ${what}`);
+  return value;
+};
+
+/**
+ * Refused here, once, because each fails later in a way that names the wrong thing: a negative
+ * or fractional budget never equals the attempt counter, so the loop never reaches its last
+ * attempt; a non-finite backoff waits forever; a non-positive deadline is refused by
+ * `AbortSignal.timeout` on the first attempt and would surface as a transport failure.
+ */
+const budgetOf = (options: ClientOptions): Budget => ({
+  maxRetries: checked(
+    "max_retries",
+    options.maxRetries ?? DEFAULT_MAX_RETRIES,
+    (n) => Number.isSafeInteger(n) && n >= 0,
+    "a non-negative integer",
+  ),
+  backoff: checked(
+    "backoff",
+    options.backoff ?? DEFAULT_BACKOFF_MS,
+    (n) => Number.isFinite(n) && n >= 0,
+    "a finite number of milliseconds >= 0",
+  ),
+  timeout: checked(
+    "timeout",
+    options.timeout ?? DEFAULT_TIMEOUT_MS,
+    (n) => Number.isFinite(n) && n > 0,
+    "a finite number of milliseconds > 0",
+  ),
+});
+
+/** Build a client. Every option is checked here, so a bad one fails at construction. */
+export const createClient = (options: ClientOptions): Client => {
+  const { trimmed, host, port } = originOf(options.baseUrl ?? DEFAULT_BASE_URL);
 
   const shared = {
     apiKey: options.apiKey,
-    host: parsed.hostname,
+    host,
     port,
-    maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES,
-    backoff: options.backoff ?? DEFAULT_BACKOFF_MS,
-    timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
+    ...budgetOf(options),
     fetchImpl: options.fetch ?? globalThis.fetch.bind(globalThis),
   } as const;
 
   return Object.freeze({
-    server: Object.freeze({ host: parsed.hostname, port }),
+    server: Object.freeze({ host, port }),
     evaluate: async (request: WireRequest): Promise<WireResponse> =>
       send({
         ...shared,

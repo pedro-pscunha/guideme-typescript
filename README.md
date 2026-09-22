@@ -149,6 +149,12 @@ the public surface.
 
 Set `TYPESAFE_API_KEY` in the environment, or pass a key to `new Guide({ apiKey })`.
 
+Build one `Guide` per process and share it freely, across requests and across concurrent
+`ask` calls. A guide is frozen once it is built, and `ask` keeps no state between calls: each
+call is its own request, its own span and its own answer. An injected `fetch` is shared the
+same way, so it must be safe to call concurrently, which the platform's own `fetch` is.
+`guide.withPolicy(..)` returns a second guide that shares the first one's transport.
+
 ## The three questions
 
 | Constructor                 | Sends                                     | Plain output                             | `.detail()` output                                                            |
@@ -315,17 +321,17 @@ environment variables that point the exporter anywhere, and console and OTLP set
 
 One class, `GuidemeError`, for everything, discriminated by `kind`:
 
-| `kind`              | When                                                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `auth`              | 401                                                                                                                                  |
-| `invalid`           | 422, body on `.body`                                                                                                                 |
-| `rate_limited`      | 429 after retries, or a `retry-after` too long to wait for; `.retryAfterMs`                                                          |
-| `overloaded`        | 529, same                                                                                                                            |
-| `transport`         | connection, TLS, timeout, or a body that failed to read                                                                              |
-| `unexpected_status` | anything the contract does not define, including a 3xx; `.status` and `.body`                                                        |
-| `protocol`          | the response violates the contract: undecodable body, wrong answer kind, option or level not in the rubric, probability outside 0..1 |
-| `unsure`            | the policy said unsure and nothing caught it; `.question` names it                                                                   |
-| `config`            | bad thresholds, missing key, empty batch, unserialisable state, empty or duplicate rubric                                            |
+| `kind`              | When                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`              | 401                                                                                                                                                      |
+| `invalid`           | 422, body on `.body`; an unreadable body leaves `.body` unset and the read failure on `.cause`                                                           |
+| `rate_limited`      | 429 after retries, or a `retry-after` too long to wait for; `.retryAfterMs`                                                                              |
+| `overloaded`        | 529, same                                                                                                                                                |
+| `transport`         | connection, TLS, timeout, or a 200 whose body failed to read                                                                                             |
+| `unexpected_status` | anything the contract does not define, including a 3xx; `.status` and `.body`                                                                            |
+| `protocol`          | the response violates the contract: undecodable body, wrong answer kind, option or level not in the rubric, probability outside 0..1, a blank model name |
+| `unsure`            | the policy said unsure and nothing caught it; `.question` names it                                                                                       |
+| `config`            | bad thresholds, missing key, empty batch, unserialisable state, empty or duplicate rubric, a `maxRetries`, `backoff` or `timeout` out of range           |
 
 Retries use exponential backoff with jitter, capped at 30 s, and honour an integer
 `retry-after`. What is retried: 429, 529, and a request that never reached a server — a refused
@@ -446,7 +452,9 @@ the variable it replaces is not read at all.
 
 The rest of the options: `model`, `policy`, `maxRetries` (default 3), `backoff` (default 500 ms,
 the base of the exponential), `timeout` (default 30 s, per attempt), `recordState`, and `fetch`
-for an injected transport.
+for an injected transport. `maxRetries` must be a non-negative integer, `backoff` a finite
+number of milliseconds of at least 0, and `timeout` a finite number of milliseconds above 0.
+Anything else is a `config` error when the guide is built.
 
 ## Development
 

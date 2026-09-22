@@ -101,6 +101,22 @@ test("probabilities are range-checked at parse time and unknown fields are ignor
     },
   );
 
+  // A model name the API sends is branded where it is parsed, and a blank one is the API's
+  // mistake, so it is `protocol` — the same refusal a caller's blank model gets as `config`.
+  expect(
+    () =>
+      parseResponse({
+        model: " \t",
+        answers: { q0: { type: "noul", noul: 0.5 } },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    "a whitespace-only model from the API is a protocol error",
+  ).toThrow(expect.objectContaining({ kind: "protocol" }));
+  expect(
+    () => parseModels({ models: [{ name: " ", description: "d", release_date: "2026-08-01" }] }),
+    "a blank model name in the catalogue is a protocol error",
+  ).toThrow(expect.objectContaining({ kind: "protocol" }));
+
   // SC5 says the REQUEST schema too, not only the response. A body this package builds and
   // cannot validate is its own mistake, so it is a `config` error.
   expect(
@@ -287,6 +303,23 @@ test("a body that closes mid-stream is NOT retried", async () => {
   // The rejection is a TypeError, exactly like a refused connection. Only the phase tells
   // them apart, and the phase is why this served exactly one request.
   expect(server.received).toHaveLength(1);
+
+  // And an error status whose body cannot be read keeps its status kind. The body is not
+  // invented — no empty string standing in for a body that never arrived — and the read
+  // failure travels as the cause.
+  const unreadable = await startServer([{ cutMidBody: true, status: 422 }]);
+  const thrown: unknown = await clientFor(unreadable.baseUrl, 3)
+    .evaluate(request)
+    .catch((e: unknown) => e);
+  expect(thrown, "a 422 is invalid whether or not its body can be read").toMatchObject({
+    kind: "invalid",
+    body: undefined,
+  });
+  expect(
+    thrown instanceof Error ? thrown.cause : undefined,
+    "the body read failure is carried as the cause",
+  ).toBeInstanceOf(Error);
+  expect(unreadable.received, "a status error is never retried").toHaveLength(1);
 });
 
 // ---- shapes, the guide and the receipt (cases 21-25) -------------------------------------
@@ -335,6 +368,19 @@ test("a malformed body and an option outside the rubric are both protocol errors
     "a redirect surfaces as unexpected_status and is not followed",
   ).rejects.toMatchObject({ kind: "unexpected_status", status: 302 });
   expect(elsewhere.received, "the redirect target never sees the request").toHaveLength(0);
+
+  // A 200 whose body is not JSON is protocol, and the parser's own error stays as the cause.
+  const notJson = await startServer([{ status: 200, body: "not json" }]);
+  const thrown: unknown = await guideFor(notJson.baseUrl)
+    .ask(noul("Urgent?"), "x")
+    .catch((e: unknown) => e);
+  expect(thrown, "a body that is not JSON is a protocol error").toMatchObject({
+    kind: "protocol",
+  });
+  expect(
+    thrown instanceof Error ? thrown.cause : undefined,
+    "the JSON parser's error is carried as the cause",
+  ).toBeInstanceOf(SyntaxError);
 });
 
 test("unsure with no fallback names the question; an empty batch is a config error", async () => {
@@ -359,6 +405,41 @@ test("unsure with no fallback names the question; an empty batch is a config err
   );
   await expect(guide.ask([], "x")).rejects.toMatchObject({ kind: "config" });
   await expect(guide.ask({}, "x")).rejects.toMatchObject({ kind: "config" });
+
+  // The retry budget, the backoff and the deadline are refused at construction when they
+  // cannot mean what they say: a negative or fractional budget never reaches `last` and loops
+  // on, and a non-positive deadline surfaced as a transport failure on the first ask.
+  for (const bad of [
+    { maxRetries: -1 },
+    { maxRetries: 1.5 },
+    { maxRetries: Number.NaN },
+    { maxRetries: Number.POSITIVE_INFINITY },
+    { backoff: -1 },
+    { backoff: Number.NaN },
+    { backoff: Number.POSITIVE_INFINITY },
+    { timeout: 0 },
+    { timeout: -5 },
+    { timeout: Number.NaN },
+    { timeout: Number.POSITIVE_INFINITY },
+  ]) {
+    expect(
+      () => new Guide({ apiKey: new ApiKey("k"), ...bad }),
+      `${JSON.stringify(bad)} is refused when the guide is built`,
+    ).toThrow(expect.objectContaining({ kind: "config" }));
+  }
+  // A descriptor assembled by hand with a rubric missing is refused, not padded with `null`:
+  // `null` means "described not at all", and inventing that declaration would put a bare key on
+  // the wire that nobody wrote.
+  const lopsided = { descriptor: "choice", keys: ["a", "b"], rubrics: [option("a")] } as const;
+  await expect(
+    guide.ask(choose({ ...lopsided, fallbackKey: undefined }, "Which?"), "x"),
+    "a key without its rubric is a config error",
+  ).rejects.toMatchObject({ kind: "config" });
+
+  expect(
+    new Guide({ apiKey: new ApiKey("k"), maxRetries: 0, backoff: 0, timeout: 1 }),
+    "zero retries, zero backoff and a one-millisecond deadline are all legal",
+  ).toBeInstanceOf(Guide);
 });
 
 test("askWithReceipt returns the response's model and usage exactly", async () => {

@@ -11,7 +11,7 @@ export interface Usage {
 /** One entry from `GET /v1/models`. */
 export interface ModelInfo {
   /** Name or alias accepted by the `model` field. */
-  readonly name: string;
+  readonly name: Model;
   /** What it is for. */
   readonly description: string;
   /** Release date as the API reports it. */

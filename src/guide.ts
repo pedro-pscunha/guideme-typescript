@@ -32,11 +32,16 @@ export interface GuideOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 
-/** What {@link Guide.withPolicy} builds a derived guide from: everything but the key. */
-type DerivedOptions = Omit<GuideOptions, "apiKey">;
-
-/** A user-defined type guard whose body is the check that justifies the narrowing. */
-const hasApiKey = (o: GuideOptions | DerivedOptions): o is GuideOptions => "apiKey" in o;
+/**
+ * The client a guide built by {@link Guide.withPolicy} shares with the guide it came from,
+ * keyed by the options object `withPolicy` hands the constructor.
+ *
+ * Module-private, and that is the whole point: the constructor's only public parameter is
+ * {@link GuideOptions}, so no caller can pass a client in — a structural lookalike would put
+ * the wire types on the public surface and skip response validation. An entry lives exactly
+ * as long as the options object it is keyed by, which is one constructor call.
+ */
+const inherited = new WeakMap<GuideOptions, Client>();
 
 /** Read one environment variable, or `undefined` where there is no environment. */
 const env = (name: string): string | undefined =>
@@ -59,8 +64,9 @@ const modelFromEnv = (): Model | undefined => {
  * This guide's own transport. Every unset field is omitted rather than passed as `undefined`,
  * so the client's own defaults are what fills them in.
  */
-const ownClient = (options: GuideOptions | DerivedOptions): Client => {
-  if (!hasApiKey(options)) throw configError("api_key is required");
+const ownClient = (options: GuideOptions): Client => {
+  // The type already demands a key. This is for a JavaScript caller, who can pass anything.
+  if (!(options.apiKey instanceof ApiKey)) throw configError("api_key is required");
   return createClient({
     apiKey: options.apiKey,
     ...(options.baseUrl === undefined ? {} : { baseUrl: options.baseUrl }),
@@ -121,6 +127,7 @@ const stringified = (v: unknown): string | undefined => JSON.stringify(v);
  * nothing to release — and no synchronous `ask`, because no synchronous `fetch` exists.
  */
 export class Guide {
+  readonly #options: GuideOptions;
   readonly #client: Client;
   readonly #model: Model;
   readonly #policy: Policy;
@@ -129,15 +136,17 @@ export class Guide {
   /**
    * Build a guide.
    *
-   * `transport` is the internal seam {@link Guide.withPolicy} uses to share one client
-   * between two guides. It is in no exported type, so a caller cannot reach it, and it is why
-   * a derived guide is an ordinary construction rather than a clone: a `#private` field
-   * cannot be read from outside its instance, so there is nothing to copy.
+   * @throws A `config` `GuidemeError` for a bad policy, a missing key, a base URL that
+   * does not parse or carries credentials, or a `maxRetries`, `backoff` or `timeout` that
+   * cannot mean what it says.
    */
-  constructor(options: GuideOptions | DerivedOptions, transport?: Client) {
+  constructor(options: GuideOptions) {
     // Validated here so a bad house policy fails at startup rather than at the first ask.
     settle(options.policy ?? {});
-    this.#client = transport ?? ownClient(options);
+    this.#options = options;
+    // A guide from `withPolicy` finds its parent's client here; every other guide builds its
+    // own. See `inherited` for why the hand-over is not a constructor parameter.
+    this.#client = inherited.get(options) ?? ownClient(options);
     this.#model = options.model ?? LATEST_MODEL;
     this.#policy = options.policy ?? {};
     this.#recordState = options.recordState ?? false;
@@ -161,10 +170,9 @@ export class Guide {
   withPolicy(policy: Policy): Guide {
     const merged = over(policy, this.#policy);
     settle(merged); // validated now, so a bad patch fails where it is written
-    return new Guide(
-      { model: this.#model, policy: merged, recordState: this.#recordState },
-      this.#client,
-    );
+    const options: GuideOptions = { ...this.#options, policy: merged };
+    inherited.set(options, this.#client);
+    return new Guide(options);
   }
 
   /** Ask one shape and get the answer, the model that produced it and what it cost. */
@@ -214,7 +222,7 @@ export class Guide {
         const answer = decodeShape(plan.claim, replies) as Answered<S>;
         return Object.freeze({
           answer,
-          model: model(response.model),
+          model: response.model,
           usage: Object.freeze({
             inputTokens: response.usage.input_tokens,
             outputTokens: response.usage.output_tokens,
