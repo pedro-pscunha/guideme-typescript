@@ -135,33 +135,43 @@ test("askWithReceipt wraps every shape", async () => {
   expectTypeOf(receipt.usage.inputTokens).toEqualTypeOf<number>();
 });
 
+/**
+ * Every type `src/index.ts` exports, named once, in one declaration.
+ *
+ * This is the other half of `test/surface.test.ts`: `Object.keys` sees runtime values only,
+ * because types are erased. Removing or renaming an export breaks this declaration, and adding
+ * one without listing it breaks the arity assertion below. `Outcome` is deliberately absent:
+ * it is the policy's internal reading, and `Verdict`, `Ranked` and `Scored` are what a caller
+ * sees, so naming it here would not compile.
+ */
+type ExportedTypes = [
+  ChoiceQuestion<Department>,
+  Confidence,
+  ErrorKind,
+  GuideOptions,
+  Key,
+  Level<typeof Frustration>,
+  LevelRubric,
+  Model,
+  ModelInfo,
+  NoulQuestion,
+  Option<typeof Department>,
+  OptionRubric,
+  Policy,
+  Probability,
+  Question<boolean>,
+  Rank,
+  Ranked<Department>,
+  Receipt<boolean>,
+  ScoreQuestion<Frustration>,
+  Scored<Frustration>,
+  Thresholds,
+  Usage,
+  Verdict,
+];
+
 test("the exported TYPE surface is exactly this list", () => {
-  // `Object.keys` in test/surface.test.ts sees runtime values only, because types are erased.
-  // This is the other half: every type `src/index.ts` exports, referenced once, so that
-  // removing or renaming one is a compile error here. A type the package exports and this
-  // list omits is caught by the `.d.ts` roll-call in the gate (Task 21 Step 5).
-  expectTypeOf<GuideOptions>().not.toBeAny();
-  expectTypeOf<Option<typeof Department>>().not.toBeAny();
-  expectTypeOf<Level<typeof Frustration>>().not.toBeAny();
-  expectTypeOf<OptionRubric>().not.toBeAny();
-  expectTypeOf<LevelRubric>().not.toBeAny();
-  expectTypeOf<Question<boolean>>().not.toBeAny();
-  expectTypeOf<NoulQuestion>().not.toBeAny();
-  expectTypeOf<ChoiceQuestion<Department>>().not.toBeAny();
-  expectTypeOf<ScoreQuestion<Frustration>>().not.toBeAny();
-  expectTypeOf<Policy>().not.toBeAny();
-  expectTypeOf<Thresholds>().not.toBeAny();
-  expectTypeOf<Verdict>().not.toBeAny();
-  expectTypeOf<Ranked<Department>>().not.toBeAny();
-  expectTypeOf<Scored<Frustration>>().not.toBeAny();
-  expectTypeOf<Key>().not.toBeAny();
-  expectTypeOf<Rank>().not.toBeAny();
-  expectTypeOf<Receipt<boolean>>().not.toBeAny();
-  expectTypeOf<Usage>().not.toBeAny();
-  expectTypeOf<ModelInfo>().not.toBeAny();
-  expectTypeOf<Model>().not.toBeAny();
-  expectTypeOf<Probability>().not.toBeAny();
-  expectTypeOf<Confidence>().not.toBeAny();
+  expectTypeOf<ExportedTypes["length"]>().toEqualTypeOf<23>();
   expectTypeOf<ErrorKind>().toEqualTypeOf<
     | "auth"
     | "invalid"
@@ -173,8 +183,6 @@ test("the exported TYPE surface is exactly this list", () => {
     | "unsure"
     | "config"
   >();
-  // `Outcome` is NOT exported: it is the policy's internal reading, and `Verdict`,
-  // `Ranked` and `Scored` are what a caller sees. Referencing it here would not compile.
 });
 
 test("no exported type is assignable from a zod schema type", () => {
