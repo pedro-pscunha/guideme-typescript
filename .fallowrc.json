@@ -10,9 +10,6 @@
     "fallow",
     "publint",
     "@arethetypeswrong/cli",
-    "@types/node",
-    "zod",
-    "@opentelemetry/api",
-    "@opentelemetry/sdk-trace-base"
+    "@types/node"
   ]
 }
