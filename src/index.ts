@@ -32,3 +32,5 @@ export {
   type ScoreQuestion,
   type Scored,
 } from "./question.js";
+export { Guide, type GuideOptions } from "./guide.js";
+export { type ModelInfo, type Receipt, type Usage } from "./receipt.js";

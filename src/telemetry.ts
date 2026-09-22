@@ -1,6 +1,7 @@
 import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Attributes, Span, Tracer } from "@opentelemetry/api";
 import { GuidemeError, assertNever } from "./errors.js";
+import type { ErrorKind } from "./errors.js";
 import type { Outcome, Thresholds } from "./policy.js";
 
 // `./policy` is imported for types only, so it is erased and adds no edge at runtime. The
@@ -22,7 +23,7 @@ interface SpanHandle {
 }
 
 /** One HTTP attempt's span. */
-interface HttpSpan extends SpanHandle {
+export interface HttpSpan extends SpanHandle {
   /** Record `http.response.status_code`. */
   status(code: number): void;
 }
@@ -202,27 +203,34 @@ const answerAttributes = (outcome: Outcome): Attributes => {
 };
 
 /**
+ * Which kinds carry a verbatim response body on their message.
+ *
+ * A `Record` over {@link ErrorKind} rather than a `switch`: a new kind is a compile error at
+ * this declaration, which is where the question "does this one carry a body?" has to be
+ * answered, rather than at a `default` arm further away.
+ */
+const CARRIES_A_BODY: Readonly<Record<ErrorKind, boolean>> = {
+  auth: false,
+  invalid: true,
+  rate_limited: false,
+  overloaded: false,
+  transport: false,
+  unexpected_status: true,
+  protocol: false,
+  unsure: false,
+  config: false,
+};
+
+/**
  * The status description for a failed ask span. Ported from Rust's `describe()`: two kinds
  * carry a verbatim response body, which could echo the caller's state, so the span says only
  * which status it was and the body stays on the returned error.
  */
 const describe = (e: GuidemeError): string => {
-  switch (e.kind) {
-    case "invalid":
-      return "invalid request: the 422 body is on the returned error";
-    case "unexpected_status":
-      return `unexpected status ${String(e.status ?? 0)}: the body is on the returned error`;
-    case "auth":
-    case "rate_limited":
-    case "overloaded":
-    case "transport":
-    case "protocol":
-    case "unsure":
-    case "config":
-      return e.message;
-    default:
-      return assertNever(e.kind);
-  }
+  if (!CARRIES_A_BODY[e.kind]) return e.message;
+  return e.kind === "invalid"
+    ? "invalid request: the 422 body is on the returned error"
+    : `unexpected status ${String(e.status ?? 0)}: the body is on the returned error`;
 };
 
 /** Mark the ask span failed, with a description that never carries a response body. */

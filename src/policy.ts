@@ -47,8 +47,12 @@ export interface Thresholds {
   readonly minConfidence: number;
 }
 
-/** The defaults: no unsure band on a noul, never unsure on confidence. */
-export const DEFAULT_THRESHOLDS: Thresholds = Object.freeze({
+/**
+ * The defaults: no unsure band on a noul, never unsure on confidence. Module-private, because
+ * {@link settle} is the only way to reach them and a second exported spelling of the same
+ * three numbers is a second place for them to drift.
+ */
+const DEFAULT_THRESHOLDS: Thresholds = Object.freeze({
   yesAbove: 0.5,
   noBelow: 0.5,
   minConfidence: 0,

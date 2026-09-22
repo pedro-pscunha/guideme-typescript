@@ -7,9 +7,25 @@ import modelsFixture from "./fixtures/models.json" with { type: "json" };
 import requestJson from "../spec/schema/request.json" with { type: "json" };
 import responseJson from "../spec/schema/response.json" with { type: "json" };
 import { closedPort, startServer } from "./support/server.js";
-import { ApiKey } from "../src/index.js";
+import { ApiKey, Guide, choice, choose, levels, noul, option, score } from "../src/index.js";
 import { createClient } from "../src/api/client.js";
 import type { Client } from "../src/api/client.js";
+import { model } from "../src/scalars.js";
+import noulQ0 from "./fixtures/noul-q0.json" with { type: "json" };
+import badNoulFixture from "./fixtures/bad-noul-q0.json" with { type: "json" };
+
+const NOUL_AS_Q0 = JSON.stringify(noulQ0);
+
+/** A non-null object, viewed as the record its fields form. */
+const isRecord = (v: unknown): v is Readonly<Record<string, { instructions?: unknown }>> =>
+  typeof v === "object" && v !== null;
+
+/** The `questions` map of a request body the test server received. Narrowed, never asserted. */
+const questionsOf = (sent: unknown): Readonly<Record<string, { instructions?: unknown }>> => {
+  if (!isRecord(sent) || !("questions" in sent)) return {};
+  const questions: unknown = sent["questions"];
+  return isRecord(questions) ? questions : {};
+};
 
 test.each([
   { name: "noul", body: noulFixture },
@@ -214,4 +230,223 @@ test("a body that closes mid-stream is NOT retried", async () => {
   // them apart, and the phase is why this served exactly one request.
   expect(server.received).toHaveLength(1);
   await server.close();
+});
+
+// ---- shapes, the guide and the receipt (cases 21-25) -------------------------------------
+
+test("a malformed body and an option outside the rubric are both protocol errors", async () => {
+  const guideFor = (baseUrl: string): Guide =>
+    new Guide({ apiKey: new ApiKey("k"), baseUrl, backoff: 10 });
+
+  const malformed = await startServer([{ status: 200, body: JSON.stringify(badNoulFixture) }]);
+  await expect(guideFor(malformed.baseUrl).ask(noul("Urgent?"), "x")).rejects.toMatchObject({
+    kind: "protocol",
+  });
+  await malformed.close();
+
+  const ghost = await startServer([
+    {
+      status: 200,
+      body: JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          q0: {
+            type: "choice",
+            choice: "ghost",
+            probabilities: { ghost: 1, billing: 0 },
+            confidence: 1,
+          },
+        },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    },
+  ]);
+  const Two = choice({ billing: option("b"), technical: option("t") });
+  await expect(guideFor(ghost.baseUrl).ask(choose(Two, "Which?"), "x")).rejects.toMatchObject({
+    kind: "protocol",
+  });
+  await ghost.close();
+
+  // A redirect is not followed: the Authorization header would travel with it. The status
+  // falls through to `unexpected_status` and the host the `location` names sees nothing.
+  const elsewhere = await startServer([{ status: 200, body: NOUL_AS_Q0 }]);
+  const redirecting = await startServer([
+    { status: 302, headers: { location: `${elsewhere.baseUrl}/v1/systemone` }, body: "" },
+  ]);
+  await expect(guideFor(redirecting.baseUrl).ask(noul("Urgent?"), "x")).rejects.toMatchObject({
+    kind: "unexpected_status",
+    status: 302,
+  });
+  expect(elsewhere.received).toHaveLength(0);
+  await redirecting.close();
+  await elsewhere.close();
+});
+
+test("unsure with no fallback names the question; an empty batch is a config error", async () => {
+  const server = await startServer([
+    {
+      status: 200,
+      body: JSON.stringify({
+        model: "jev-1.13.0",
+        answers: { q0: { type: "noul", noul: 0.5 } },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    },
+  ]);
+  const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl, backoff: 10 });
+  await expect(guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1), "x")).rejects.toMatchObject({
+    kind: "unsure",
+    question: "q0",
+  });
+  // A fallback resolves it instead of failing.
+  await expect(guide.ask(noul("Urgent?").yesAbove(0.9).noBelow(0.1).or(false), "x")).resolves.toBe(
+    false,
+  );
+  await expect(guide.ask([], "x")).rejects.toMatchObject({ kind: "config" });
+  await expect(guide.ask({}, "x")).rejects.toMatchObject({ kind: "config" });
+  await server.close();
+});
+
+test("askWithReceipt returns the response's model and usage exactly", async () => {
+  const server = await startServer([{ status: 200, body: NOUL_AS_Q0 }]);
+  const guide = new Guide({
+    apiKey: new ApiKey("k"),
+    baseUrl: server.baseUrl,
+    model: model("jev-latest"),
+  });
+  const receipt = await guide.askWithReceipt(noul("Urgent?"), "x");
+  expect(receipt.answer).toBe(true);
+  expect(receipt.model).toBe("jev-1.13.0"); // the versioned id, not the alias that was sent
+  expect(receipt.usage).toEqual({ inputTokens: 307, outputTokens: 20 });
+  expect(Object.isFrozen(receipt.usage)).toBe(true);
+  // The request carried the alias.
+  expect(JSON.parse(server.received[0]?.body ?? "{}")).toMatchObject({ model: "jev-latest" });
+  await server.close();
+});
+
+test("ask returns the bare answer for every shape", async () => {
+  const Department = choice({ billing: option("b"), technical: option("t") });
+  const Frustration = levels({ calm: "Calm", frustrated: "Frustrated" });
+  const answers = {
+    q0: { type: "noul" as const, noul: 0.92 },
+    q1: {
+      type: "choice" as const,
+      choice: "billing",
+      probabilities: { billing: 0.9, technical: 0.1 },
+      confidence: 0.95,
+    },
+    q2: {
+      type: "score" as const,
+      score: 1,
+      legend: { "0": "Calm", "1": "Frustrated" },
+      probabilities: { "0": 0.1, "1": 0.9 },
+      confidence: 0.9,
+    },
+    q3: { type: "noul" as const, noul: 0.1 },
+    q4: { type: "noul" as const, noul: 0.8 },
+  };
+  const body = JSON.stringify({
+    model: "jev-1.13.0",
+    answers,
+    usage: { input_tokens: 11, output_tokens: 2 },
+  });
+  // Three replies, one per request this case makes: the tuple ask, the bare-question ask, and
+  // `models()`. The extra answers the second ask does not need are ignored, because the reply
+  // is walked by the plan's question ids rather than by what the body happens to carry.
+  const server = await startServer([
+    { status: 200, body },
+    { status: 200, body },
+    { status: 200, body: MODELS },
+  ]);
+  const guide = new Guide({ apiKey: new ApiKey("k"), baseUrl: server.baseUrl });
+
+  const result = await guide.ask(
+    [
+      noul("urgent?"),
+      choose(Department, "which team?"),
+      score(Frustration, "how cross?"),
+      { spam: noul("spam?"), vip: noul("vip?") },
+    ] as const,
+    "a ticket",
+  );
+  const [urgent, dept, mood, flags] = result;
+  expect(urgent).toBe(true);
+  expect(dept).toBe("billing");
+  expect(mood).toBe("frustrated");
+  expect(flags).toEqual({ spam: false, vip: true });
+
+  // The ids are q0..q4 in encounter order, depth first, and the object shape's two questions
+  // are the last two because they were written last.
+  const sent: unknown = JSON.parse(server.received[0]?.body ?? "{}");
+  expect(Object.keys(questionsOf(sent))).toEqual(["q0", "q1", "q2", "q3", "q4"]);
+
+  // A plain array is an array, not a tuple, and a bare question is its own answer.
+  await expect(guide.ask(noul("urgent?"), "x")).resolves.toBe(true);
+
+  // models() copies the wire entry into this package's own shape, snake to camel.
+  const catalogue = await guide.models();
+  expect(catalogue).toEqual([
+    {
+      name: "jev-latest",
+      description: "The most recent stable release",
+      releaseDate: "2026-08-01",
+    },
+  ]);
+  expect(Object.isFrozen(catalogue[0])).toBe(true);
+  await server.close();
+
+  // And the object-shape ordering rule, in the same case so the budget stays at 40. JavaScript
+  // reorders integer-like keys ahead of string keys, so "1" is encountered before "2" whatever
+  // the caller wrote. docs/contract.md records this as the TypeScript spelling of the
+  // encounter-order rule; the assertion is here so it cannot change unnoticed.
+  const twoBody = JSON.stringify({
+    model: "jev-1.13.0",
+    answers: { q0: { type: "noul", noul: 0.9 }, q1: { type: "noul", noul: 0.1 } },
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+  const ordered = await startServer([{ status: 200, body: twoBody }]);
+  const second = new Guide({ apiKey: new ApiKey("k"), baseUrl: ordered.baseUrl });
+  const answered = await second.ask({ "2": noul("second"), "1": noul("first") }, "x");
+  const ordering: unknown = JSON.parse(ordered.received[0]?.body ?? "{}");
+  expect(questionsOf(ordering)["q0"]?.instructions).toBe("first");
+  expect(answered).toEqual({ "1": true, "2": false });
+  await ordered.close();
+});
+
+test("an injected fetch is the only transport, and the README recipe is this input", async () => {
+  const realFetch = vi.spyOn(globalThis, "fetch");
+  const answers = {
+    q0: { type: "noul" as const, noul: 0.92 },
+    q1: {
+      type: "choice" as const,
+      choice: "billing",
+      probabilities: { billing: 0.9, technical: 0.1 },
+      confidence: 0.95,
+    },
+  };
+  const fakeFetch: typeof globalThis.fetch = (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    expect(url).toContain("/v1/systemone");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-test");
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          model: "jev-1.13.0",
+          answers,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+  };
+  const Department = choice({ billing: option("b"), technical: option("t") });
+  const guide = new Guide({ apiKey: new ApiKey("sk-test"), fetch: fakeFetch });
+  const [urgent, dept] = await guide.ask(
+    [noul("Is this urgent?"), choose(Department, "Which team?")] as const,
+    "My card was charged twice",
+  );
+  expect(urgent).toBe(true);
+  expect(dept).toBe("billing");
+  expect(realFetch).not.toHaveBeenCalled();
+  realFetch.mockRestore();
 });

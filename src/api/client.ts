@@ -3,6 +3,7 @@ import { parseModels, parseRequest, parseResponse } from "./wire.js";
 import type { WireModelInfo, WireRequest, WireResponse } from "./wire.js";
 import type { ApiKey } from "../scalars.js";
 import { failSpan, httpSpan, retryEvent } from "../telemetry.js";
+import type { HttpSpan } from "../telemetry.js";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -117,13 +118,103 @@ const readBody = async <T>(opts: Attempt<T>, response: Response): Promise<T> => 
   return opts.parse(json);
 };
 
+/** Exponential backoff for this attempt, capped, plus jitter. */
+const backoffFor = (opts: Attempt<unknown>, attempt: number): number =>
+  Math.min(opts.backoff * 2 ** attempt, MAX_BACKOFF_MS) + jitter();
+
+/** The request, built the same way on every attempt. */
+const initFor = (opts: Attempt<unknown>): RequestInit => ({
+  method: opts.method,
+  headers: {
+    authorization: `Bearer ${opts.apiKey.expose()}`,
+    ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
+  },
+  ...(opts.body === undefined ? {} : { body: opts.body }),
+  signal: AbortSignal.timeout(opts.timeout),
+  // Never follow a redirect: the Authorization header would travel with it, and whether it
+  // survives a cross-origin hop is the runtime's decision, not ours.
+  redirect: "manual",
+});
+
+/**
+ * The connection phase failed. Wait and let the caller resend, or throw.
+ *
+ * A `TypeError` here is a refused or reset connection, or a TLS handshake failure: the request
+ * went nowhere, so it is retried in the same budget. A `TimeoutError` or `AbortError` is this
+ * client's own per-attempt deadline and is never retried. Measured: a body failure ALSO
+ * surfaces as a `TypeError`, which is why the body read has its own `try` and never reaches
+ * this branch.
+ */
+const afterConnectionFailure = async (
+  opts: Attempt<unknown>,
+  span: HttpSpan,
+  e: unknown,
+  attempt: number,
+  last: boolean,
+): Promise<void> => {
+  const reachedNobody = e instanceof TypeError;
+  const err = transportError(reachedNobody ? "could not reach TypeSafe" : "request failed", e);
+  failSpan(span, err.kind, err.message);
+  if (last || !reachedNobody) {
+    span.end();
+    throw err;
+  }
+  const delay = backoffFor(opts, attempt);
+  retryEvent(span, { errorType: "transport", attempt: attempt + 1, delayMs: delay });
+  span.end();
+  await wait(delay);
+};
+
+/** A 200 arrived. Read and narrow it, or mark the attempt and throw. */
+const afterSuccess = async <T>(
+  opts: Attempt<T>,
+  span: HttpSpan,
+  response: Response,
+): Promise<T> => {
+  try {
+    const value = await readBody(opts, response);
+    span.end();
+    return value;
+  } catch (e) {
+    const err = e instanceof GuidemeError ? e : protocolError(String(e));
+    failSpan(span, err.kind, err.message);
+    span.end();
+    throw err;
+  }
+};
+
+/** A non-200 arrived. Wait and let the caller resend, or throw the typed error. */
+const afterStatus = async (
+  opts: Attempt<unknown>,
+  span: HttpSpan,
+  response: Response,
+  attempt: number,
+  last: boolean,
+): Promise<void> => {
+  failSpan(span, String(response.status), `HTTP ${String(response.status)}`);
+  if (response.status !== 429 && response.status !== 529) {
+    const body = await response.text().catch(() => "");
+    span.end();
+    throw classify(response.status, body);
+  }
+  const retryAfterMs = parseRetryAfter(response.headers);
+  if (last || (retryAfterMs !== undefined && retryAfterMs > MAX_BACKOFF_MS)) {
+    span.end();
+    throw throttled(response.status, retryAfterMs);
+  }
+  const delay = retryAfterMs ?? backoffFor(opts, attempt);
+  retryEvent(span, { status: response.status, attempt: attempt + 1, delayMs: delay });
+  span.end();
+  await wait(delay);
+};
+
 /**
  * The 0.2.0 retry policy, once, for both endpoints.
  *
- * Classification is by **phase**, never by error class: a body that closes mid-stream rejects
- * with a `TypeError` in both Node and Bun, the same class a refused connection produces, so
- * the `fetch` call and the body read sit in separate `try` blocks and only the connection
- * phase resends.
+ * Classification is by **phase**, never by error class: the `fetch` call and the body read sit
+ * in separate `try` blocks, and only the connection phase resends. Each phase's handler either
+ * throws the typed error or returns once it has waited, so the loop itself is the budget and
+ * nothing else.
  */
 const send = async <T>(opts: Attempt<T>): Promise<T> => {
   for (let attempt = 0; ; attempt += 1) {
@@ -140,67 +231,15 @@ const send = async <T>(opts: Attempt<T>): Promise<T> => {
 
     let response: Response;
     try {
-      response = await opts.fetchImpl(opts.url, {
-        method: opts.method,
-        headers: {
-          authorization: `Bearer ${opts.apiKey.expose()}`,
-          ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        ...(opts.body === undefined ? {} : { body: opts.body }),
-        signal: AbortSignal.timeout(opts.timeout),
-        // Never follow a redirect: the Authorization header would travel with it, and
-        // whether it survives a cross-origin hop is the runtime's decision, not ours.
-        redirect: "manual",
-      });
+      response = await opts.fetchImpl(opts.url, initFor(opts));
     } catch (e) {
-      // The CONNECTION phase. A TypeError here is a refused or reset connection, or a TLS
-      // handshake failure: the request went nowhere, so it is retried in the same budget.
-      // A TimeoutError or AbortError is our own per-attempt deadline and is never retried.
-      // Measured: a body failure ALSO surfaces as a TypeError, which is why it is caught in
-      // its own try above and never reaches this branch.
-      const reachedNobody = e instanceof TypeError;
-      const err = transportError(reachedNobody ? "could not reach TypeSafe" : "request failed", e);
-      failSpan(span, err.kind, err.message);
-      if (last || !reachedNobody) {
-        span.end();
-        throw err;
-      }
-      const delay = Math.min(opts.backoff * 2 ** attempt, MAX_BACKOFF_MS) + jitter();
-      retryEvent(span, { errorType: "transport", attempt: attempt + 1, delayMs: delay });
-      span.end();
-      await wait(delay);
+      await afterConnectionFailure(opts, span, e, attempt, last);
       continue;
     }
 
     span.status(response.status);
-    if (response.status === 200) {
-      try {
-        const value = await readBody(opts, response);
-        span.end();
-        return value;
-      } catch (e) {
-        const err = e instanceof GuidemeError ? e : protocolError(String(e));
-        failSpan(span, err.kind, err.message);
-        span.end();
-        throw err;
-      }
-    }
-
-    failSpan(span, String(response.status), `HTTP ${String(response.status)}`);
-    if (response.status !== 429 && response.status !== 529) {
-      const body = await response.text().catch(() => "");
-      span.end();
-      throw classify(response.status, body);
-    }
-    const retryAfterMs = parseRetryAfter(response.headers);
-    if (last || (retryAfterMs !== undefined && retryAfterMs > MAX_BACKOFF_MS)) {
-      span.end();
-      throw throttled(response.status, retryAfterMs);
-    }
-    const delay = retryAfterMs ?? Math.min(opts.backoff * 2 ** attempt, MAX_BACKOFF_MS) + jitter();
-    retryEvent(span, { status: response.status, attempt: attempt + 1, delayMs: delay });
-    span.end();
-    await wait(delay);
+    if (response.status === 200) return await afterSuccess(opts, span, response);
+    await afterStatus(opts, span, response, attempt, last);
   }
 };
 

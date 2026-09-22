@@ -59,6 +59,27 @@ interface ChoiceDescriptor<K extends string> {
 export type Option<D> = D extends ChoiceDescriptor<infer K> ? K : never;
 
 /**
+ * Check a whole set of options and name the one marked as the fallback.
+ *
+ * Shared by {@link choice} and {@link chooseAmong} rather than written twice: both hold the
+ * whole set at once, so both enforce the same rules, and two copies would be two rules waiting
+ * to diverge. Rules 1-5, 8, 9, 11 and 12 all fire here, where the options were written.
+ */
+const checkedOptions = <K extends string>(
+  keys: readonly K[],
+  rubrics: readonly (OptionRubric | null)[],
+): K | undefined => {
+  const marked = keys.filter((_, i) => rubrics[i]?.isFallback === true);
+  if (marked.length > 1) {
+    throw configError(
+      `a choice may have at most one fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} are all marked`,
+    );
+  }
+  renderOptions(keys.map((k, i) => [k, rubrics[i] ?? null] as const));
+  return marked[0];
+};
+
+/**
  * Declare a set of options. At least two are required, exactly one may be a `fallback`, and
  * declaration order is the order the options reach the wire.
  */
@@ -67,19 +88,13 @@ export const choice = <const S extends Readonly<Record<string, OptionRubric>>>(
 ): ChoiceDescriptor<Extract<keyof S, string>> => {
   const keys = keysOf(spec);
   const rubrics = keys.map((k) => spec[k]);
-  const marked = keys.filter((k) => spec[k].isFallback);
-  if (marked.length > 1) {
-    throw configError(
-      `a choice may have at most one fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} are all marked`,
-    );
-  }
   // Rule 5 runs here so a shared example fails where the set was declared.
-  renderOptions(keys.map((k, i) => [k, rubrics[i] ?? null] as const));
+  const fallbackKey = checkedOptions(keys, rubrics);
   return Object.freeze({
     descriptor: "choice",
     keys: Object.freeze(keys),
     rubrics: Object.freeze(rubrics),
-    fallbackKey: marked[0],
+    fallbackKey,
   });
 };
 
@@ -620,19 +635,11 @@ export const chooseAmong = (
 ): ChoiceQuestion<string, Key> => {
   const keys = Object.keys(options);
   const rubrics = keys.map((k) => options[k] ?? null);
-  const marked = keys.filter((k) => options[k]?.isFallback === true);
-  if (marked.length > 1) {
-    throw configError(
-      `a choice may have at most one fallback; ${marked.map((m) => JSON.stringify(m)).join(", ")} are all marked`,
-    );
-  }
-  // Rules 1-5, 8, 9, 11 and 12 all fire here, where the options were written.
-  renderOptions(keys.map((k, i) => [k, rubrics[i] ?? null] as const));
   return new ChoiceImpl<string, Key>({
     instructions,
     keys,
     rubrics,
-    fallbackKey: marked[0],
+    fallbackKey: checkedOptions(keys, rubrics),
     policy: {},
     or: undefined,
     detailed: false,
