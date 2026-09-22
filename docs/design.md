@@ -59,14 +59,20 @@ Each module survives the test.
   `Parameters<..>`, which would otherwise become the de facto API. They are parameterised by the
   **answer** rather than by the key, because that is the type argument `Answered` reads straight
   back off the reference.
-- **A question's answer type is structural.** Every question interface carries
-  `readonly [answer]?: Out`, keyed by a `declare`d `unique symbol` that is never exported and
-  never set. Without it `Out` appeared only in `or`'s parameter — bivariant, as a method — and
-  in recursive return types, so it was a free label: `DetailedChoiceQuestion<number>` held a
-  real `.detail()`, and a choice over one key set passed for a choice over another. The member
-  makes `Out` covariant, and through `detail()`'s return type it pins `K` too. The three
-  implementation classes declare the same member, type only, so narrowing an `AnyQuestion` to
-  them still finds a subtype.
+- **A question's answer type is structural, and a question cannot be written by hand.** Every
+  question interface carries `readonly [answer]: Out` (`DetailedNoulQuestion` carries
+  `Verdict`), keyed by a `declare`d `unique symbol` that is never exported and never set at run
+  time. Without it `Out` appeared only in `or`'s parameter — bivariant, as a method — and in
+  recursive return types, so it was a free label: `DetailedChoiceQuestion<number>` held a real
+  `.detail()`, and a choice over one key set passed for a choice over another. The member makes
+  `Out` covariant, and through `detail()`'s return type it pins `K` too; and because a detailed
+  noul's member is `Verdict` where a plain noul's is `boolean`, a plain `noul(..)` no longer
+  passes for a `DetailedNoulQuestion`. It is **required**, so
+  an object literal with every method of a question is a type error, as a hand-built descriptor
+  already was: no caller can write the key. The three implementation classes `declare` the same
+  member, type only. The runtime guard stays as the second line: `encodeQuestion` refuses
+  anything that is not one of those classes with a `config` error, for a value that reached it
+  through `unknown`.
 - **Two rubric types where Rust has one.** Rust's `Rubric` is a single struct used in every
   rubric position, and "a level carries no counterexample" is a check inside `render_levels`
   plus a compile error inside `#[derive(Levels)]`. Here `option(..)` returns an `OptionRubric`
@@ -160,6 +166,25 @@ Each module survives the test.
   major bump a patch here rather than a breaking change for everyone — the opposite of the
   trade Rust makes with `reqwest` — and it is checked twice: `test/typing.test-d.ts` pins
   `Receipt["usage"]` structurally, and the package proof greps `dist/index.d.ts` for `zod`.
+- **`@opentelemetry/api` is a required peer; `zod` is a caret dependency.** The API is a
+  process-wide singleton. As an exact regular dependency (`1.9.1`) it made two copies the
+  normal case in an application, and an application on API `1.8` or older then got no spans
+  and no warning. As a peer, the application's copy is the one this package uses, and an
+  incompatible version is the installer's business: npm refuses the install (`ERESOLVE`) when
+  the application's API does not satisfy `^1.9.0`; bun and pnpm warn, then use the
+  application's copy. The peer is required, with no `peerDependenciesMeta`, because
+  `src/telemetry.ts` imports the API at load and an absent optional peer would crash there.
+  The floor is `1.9.0` and the dev copy is pinned there, so the gate tests the floor rather
+  than whatever is newest. 1.9.0 is the oldest version the gate tests. The package uses only
+  `trace`, `context`, `SpanKind` and `SpanStatusCode` (and the `Attributes`, `Span` and
+  `Tracer` types), which exist since 1.0, so older 1.x likely works but is unverified; the
+  floor is a policy choice. `zod` never reaches the public surface, so it stays a regular
+  dependency, but a caret: an exact pin forces a second copy on every application that uses
+  another 4.x. The lock pins what the gate builds. The non-required `latest-deps (unpinned)`
+  job, in its own workflow that runs on every pull request, on `main` and weekly, installs the
+  newest `zod` 4.x and API 1.x over the lock, fails if either resolves to anything else, and
+  runs the suite, so a new release in range is tested before a user meets it, even in a week
+  with no commits.
 - **The `util.inspect` hook is installed on `ApiKey.prototype`, not written in the class body.**
   `console.log` and `util.inspect` read `Symbol.for("nodejs.util.inspect.custom")`, and
   `Symbol.for(..)` does not produce a `unique symbol`, so `isolatedDeclarations` cannot name it

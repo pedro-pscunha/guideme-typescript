@@ -102,6 +102,10 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       - name: build the library the example links
         run: bun install --frozen-lockfile && mise run build
+      # Before the example's own install: bun's --frozen-lockfile does not notice when the
+      # specifiers the example's lock records for this package go stale, so this does.
+      - name: mise run example-lock
+        run: mise run example-lock
       - name: bun install --frozen-lockfile
         run: bun install --frozen-lockfile
         working-directory: examples/otlp

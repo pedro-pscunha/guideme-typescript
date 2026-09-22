@@ -141,12 +141,15 @@ a plain pair of strings keeps working unchanged.
 ## Install
 
 ```sh
-npm install @guideme/sdk
+npm install @guideme/sdk @opentelemetry/api
 ```
 
 Node 22 or newer, or any runtime with `fetch`. The package is ESM only and ships its own
-types. Its two runtime dependencies are `zod` and `@opentelemetry/api`, and neither appears on
-the public surface.
+types. `@opentelemetry/api` is a peer dependency: name it yourself, because npm installs a peer
+but does not add it to your `package.json`, and your own tracing setup imports it. If your
+application already has an API older than `1.9`, npm refuses the install (`ERESOLVE`); bun and
+pnpm warn, then use your copy. The one runtime dependency is `zod`. Neither it nor
+`@opentelemetry/api` appears on the public surface.
 
 Set `TYPESAFE_API_KEY` in the environment, or pass a key to `new Guide({ apiKey })`.
 
@@ -225,8 +228,8 @@ missed. `.detail()` skips the ladder and hands you the reading to decide yoursel
 it skips it, a detailed question has no `.or`: `noul("…").detail().or(x)` does not compile,
 rather than compiling and discarding `x`.
 
-Every type you can reach is exported by name, so a signature never has to spell
-`ReturnType<..>`:
+Every type a caller writes in a signature, except the spec constraint of `choice` and `levels`,
+is exported by name, so none has to be spelled `ReturnType<..>`:
 
 - `.detail()` returns a `DetailedNoulQuestion`, a `DetailedChoiceQuestion<Ranked<K>>` or a
   `DetailedScoreQuestion<Scored<K>>`.
@@ -235,8 +238,10 @@ Every type you can reach is exported by name, so a signature never has to spell
 - The constructors take `Instructions`; `option`, `fallback` and `level` take `OptionParts` and
   `LevelParts`.
 
-A descriptor or a rubric cannot be written as an object literal: the brand is set only by
-`choice`, `levels`, `option`, `fallback` and `level`.
+A question, a descriptor or a rubric cannot be written as an object literal. Each comes only
+from its constructor: a question from `noul`, `choose`, `score`, `chooseAmong` or
+`scoreLevels`, a descriptor from `choice` or `levels`, a rubric from `option`, `fallback` or
+`level`.
 
 A **runtime** choice has two rungs, not three. `chooseAmong` answers a `Key`, and there is no
 descriptor to carry a marked option, so handing it a `fallback()` value is a `config` error

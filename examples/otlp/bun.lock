@@ -72,7 +72,7 @@
 
     "@fallow-cli/win32-x64-msvc": ["@fallow-cli/win32-x64-msvc@3.28.0", "", { "os": "win32", "cpu": "x64" }, "sha512-w8/QvEHLTbu+4DtHF6gd6bAIGEgGxy6zSOhd0F79Hqg3Ydx4NuyQFE7/sTsE8PEKIuYDbMpNy/Dx65W2lWeGWQ=="],
 
-    "@guideme/sdk": ["@guideme/sdk@file:../..", { "dependencies": { "@opentelemetry/api": "1.9.1", "zod": "4.6.5" }, "devDependencies": { "@arethetypeswrong/cli": "0.18.5", "@opentelemetry/sdk-trace-base": "2.11.0", "@types/node": "26.6.2", "eslint": "10.11.0", "eslint-plugin-import-x": "4.17.1", "eslint-plugin-tsdoc": "0.5.3", "fallow": "3.28.0", "fast-check": "4.10.2", "prettier": "3.9.8", "publint": "0.3.24", "typescript": "5.9.3", "typescript-eslint": "8.70.1", "vitest": "5.0.1" } }],
+    "@guideme/sdk": ["@guideme/sdk@file:../..", { "dependencies": { "zod": "^4.6.5" }, "devDependencies": { "@arethetypeswrong/cli": "0.18.5", "@opentelemetry/api": "1.9.0", "@opentelemetry/sdk-trace-base": "2.11.0", "@types/node": "26.6.2", "eslint": "10.11.0", "eslint-plugin-import-x": "4.17.1", "eslint-plugin-tsdoc": "0.5.3", "fallow": "3.28.0", "fast-check": "4.10.2", "prettier": "3.9.8", "publint": "0.3.24", "typescript": "5.9.3", "typescript-eslint": "8.70.1", "vitest": "5.0.1" }, "peerDependencies": { "@opentelemetry/api": "^1.9.0" } }],
 
     "@humanfs/core": ["@humanfs/core@0.19.2", "", { "dependencies": { "@humanfs/types": "^0.15.0" } }, "sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA=="],
 
@@ -639,6 +639,8 @@
     "@arethetypeswrong/core/typescript": ["typescript@5.6.1-rc", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-E3b2+1zEFu84jB0YQi9BORDjz9+jGbwwy1Zi3G0LUNw7a7cePUrHMRNy8aPh53nXpkFGVHSxIZo5vKTfYaFiBQ=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
+
+    "@guideme/sdk/@opentelemetry/api": ["@opentelemetry/api@1.9.0", "", {}, "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="],
 
     "@microsoft/tsdoc-config/ajv": ["ajv@8.18.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A=="],
 

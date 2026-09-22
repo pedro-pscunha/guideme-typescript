@@ -301,6 +301,9 @@ declare function takesScoredZ(q: DetailedScoreQuestion<Scored<"z">>): void;
 declare function takesChoiceZ(q: ChoiceQuestion<"z", Department>): void;
 declare function takesBillingOnly(q: ChoiceQuestion<Department, "billing">): void;
 declare function takesAlwaysYes(q: NoulQuestion<true>): void;
+declare function takesNoul(q: NoulQuestion): void;
+declare function takesDetailedNoul(q: DetailedNoulQuestion): void;
+declare const realNoul: NoulQuestion;
 
 test("illegal states are compiler errors", () => {
   // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- the missing arm IS the case: the directive below is what proves the compiler reports it
@@ -374,6 +377,31 @@ test("illegal states are compiler errors", () => {
 
   // @ts-expect-error a noul answers a boolean, not only true
   takesAlwaysYes(noul("Urgent?"));
+
+  // A question, like a descriptor, cannot be written as an object literal: the answer member
+  // is required and its key is not exported. `encodeQuestion` refuses one at run time too.
+  // @ts-expect-error a question comes from noul(); an object literal with every method is not one
+  takesNoul({
+    kind: "noul",
+    with: () => realNoul,
+    yesAbove: () => realNoul,
+    noBelow: () => realNoul,
+    or: () => realNoul,
+    criteria: () => realNoul,
+    detail: () => realNoul.detail(),
+  });
+
+  // @ts-expect-error a noul answers a boolean; a detailed noul answers a Verdict
+  takesDetailedNoul(noul("Urgent?"));
+
+  // @ts-expect-error nor is a detailed one: it still has to come from detail()
+  takesDetailedNoul({
+    kind: "noul",
+    with: () => realNoul.detail(),
+    yesAbove: () => realNoul.detail(),
+    noBelow: () => realNoul.detail(),
+    criteria: () => realNoul.detail(),
+  });
 
   // @ts-expect-error a rubric comes from option(); a lookalike built by hand has no brand
   choice({

@@ -92,8 +92,17 @@ of them; the rest are checked in review.
   status and is thrown; no error-level record is ever emitted.
 - **Every public item has TSDoc.** `isolatedDeclarations` is on, so every exported signature
   carries an explicit type, and `tsdoc/syntax` checks the comment grammar.
-- **Dependencies stay minimal and pinned exact.** Two runtime dependencies, `zod` and
-  `@opentelemetry/api`, and no carets anywhere. Adding one needs a reason in the commit message.
+- **Dependencies stay minimal.** One runtime dependency, `zod`, and one required peer,
+  `@opentelemetry/api`. `devDependencies` are pinned exact. Runtime `dependencies` take a caret.
+  The OpenTelemetry API is a required peer, `^1.9.0` with no `peerDependenciesMeta`, because
+  `src/telemetry.ts` imports it at load; its dev copy is pinned at the floor, `1.9.0`, so the
+  gate tests the floor. `bun.lock` pins what the gate builds. npm refuses the install
+  (`ERESOLVE`) when the application's API does not satisfy `^1.9.0`; bun and pnpm warn, then
+  use the application's copy. `examples/otlp/bun.lock` records the library's own specifiers
+  for its `file:` dependency, and bun 1.4.2's `--frozen-lockfile` does not notice when those go
+  stale, so a change to the library's dependencies regenerates that lock too.
+  `mise run example-lock` compares the two and fails until it is regenerated; `mise run example`
+  and the `example` CI job run it. Adding a dependency needs a reason in the commit message.
 
 ### The three rubric primitives, named
 
@@ -244,6 +253,7 @@ mise run check      # the gate: fmt-check, lint, types, readme, fallow, test, bu
 mise run readme     # every ts block in README.md is compiled by a test, line for line
 mise run surface    # after build: dist/index.d.ts exports exactly scripts/exports.txt, no zod
 mise run example    # type-check and lint examples/otlp (needs its own bun install and dist/)
+mise run example-lock # examples/otlp/bun.lock records the dependencies package.json declares
 mise run test       # vitest, including the typecheck file
 mise run test-bun   # the suite under the Bun runtime (the `bun` CI job)
 mise run secrets    # gitleaks over the whole history (the `secrets` CI job)
@@ -252,6 +262,7 @@ mise run lint       # eslint only; a warning or an unused disable directive fail
 mise run types      # tsc --noEmit over src and test
 mise run fallow     # dead code, duplication and health; zero findings, no baseline
 mise run spec-check # fail if the vendored spec/ has drifted from guideme-rust main
+mise run latest-deps # the suite on the newest zod 4.x and @opentelemetry/api 1.x (not required)
 mise run hooks      # activate the tracked git hooks in .githooks (see below)
 ```
 
@@ -276,8 +287,11 @@ a dead export is consumed or deleted.
 
 - CI runs the same gate on two Node versions and under Bun, scans the whole history with
   `gitleaks`, builds and lints `examples/otlp`, proves the package builds on the minimum
-  supported Node, and diffs the vendored `spec/` against guideme-rust `main`. A weekly run
-  re-checks the advisory database and the spec drift. CI holds no secrets and never runs the
+  supported Node, and diffs the vendored `spec/` against guideme-rust `main`. A separate
+  workflow, `latest-deps.yml`, runs the suite on the newest `zod` 4.x and `@opentelemetry/api`
+  1.x rather than the lock's, on every pull request, on `main` and weekly; its job,
+  `latest-deps (unpinned)`, is not a required check. Weekly runs also re-check the advisory
+  database and the spec drift. CI holds no secrets and never runs the
   live tests. `.github/dependabot.yml` is what moves the SHA-pinned actions forward.
 - The hooks are tracked in `.githooks/` and do nothing until you run `mise run hooks`, which
   points this repository's `core.hooksPath` at that directory and fails, leaving nothing

@@ -25,9 +25,13 @@ The first release. It ships the whole guideme 0.2.0 contract, as published by
 - The 0.2.0 retry policy on both `POST /v1/systemone` and `GET /v1/models`.
 - `fetch` injection, so a caller's code is testable with no server.
 - OpenTelemetry spans and events under the names in `docs/observability.md`.
-- Type exports for everything a signature can reach: `ChoiceDescriptor`, `LevelsDescriptor`,
-  `DetailedNoulQuestion`, `DetailedChoiceQuestion`, `DetailedScoreQuestion`,
-  `GuidemeErrorOptions`, `Shape`, `Answered`, `Instructions`, `OptionParts` and `LevelParts`,
-  so a caller never has to spell `ReturnType<..>` or `Parameters<..>`. A question type's
-  answer parameter is structural, so a `.detail()` or a question of one key set never passes
-  for another's.
+- `@opentelemetry/api` as a required peer dependency, `^1.9.0`, and `zod` as `^4.6.5`. npm
+  refuses the install (`ERESOLVE`) when the application's API does not satisfy `^1.9.0`; bun
+  and pnpm warn, then use the application's copy.
+- Type exports for every type a caller writes in a signature, except the spec constraint of
+  `choice` and `levels`: `ChoiceDescriptor`, `LevelsDescriptor`, `DetailedNoulQuestion`,
+  `DetailedChoiceQuestion`, `DetailedScoreQuestion`, `GuidemeErrorOptions`, `Shape`, `Answered`,
+  `Instructions`, `OptionParts` and `LevelParts`, so a caller never has to spell
+  `ReturnType<..>` or `Parameters<..>`. A question type's answer parameter is structural, so a
+  `.detail()` or a question of one key set never passes for another's, a plain noul never passes
+  for a detailed one, and a question cannot be written as an object literal.
