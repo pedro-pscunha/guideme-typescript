@@ -139,9 +139,11 @@ Added to the failed attempt's span, just before the wait.
 event.** A response that was throttled carries its status; an attempt that never reached a
 server — a refused or reset connection, a TLS handshake failure — has no status to report and
 carries `error.type = "transport"` instead. Those are retried inside the same budget and with
-the same backoff, because the request went nowhere. A timeout of any phase and a body failure
-are not retried, so they never produce a retry event: they mark the attempt's span and are
-returned. The rule is held by the compiler as well as by a test — the event's argument type is
+the same backoff, because the request went nowhere. A connect timeout raised by the runtime's
+own `fetch` (undici's, about 10 s, in Node) rejects as a `TypeError` too, so it is one of these
+and is retried with a retry event. This package's own per-attempt `timeout`, in any phase, and
+a body failure are not retried, so they never produce a retry event: they mark the attempt's
+span and are returned. The rule is held by the compiler as well as by a test — the event's argument type is
 a union of the two shapes, so an event with both or with neither cannot be constructed.
 
 An injected `fetch` brings its own classification. guideme resends what `fetch` reports as a

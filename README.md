@@ -108,10 +108,11 @@ you wrote before moves.
 `examples` works on `levels()` too, where an example _is_ the statement that such an input
 scores at that level — its position on the scale carries the number, so nothing is added to the
 text. `counterexamples` is an option key only: a level is a position on a scale, not an option
-to rule out, and asking for one is a **compile error**. So are an empty or duplicated example,
-an example on an option with no description to attach it to, and an example that claims an
-input belongs to two options at once. The same string as an example of one option and a
-counterexample of another is exactly the point, and stays legal.
+to rule out, and asking for one is a **compile error**. The other rules are checked when the
+declaration runs, and a broken one throws a `config` error there, before any request: an empty
+or duplicated example, an example on an option with no description to attach it to, and an
+example that claims an input belongs to two options at once. The same string as an example of
+one option and a counterexample of another is exactly the point, and stays legal.
 
 A noul has no descriptor to hang parts off, so it takes the same rubric objects through
 `criteria`:
@@ -196,7 +197,9 @@ counterexample on a level. A declaration `choice()` accepts is accepted here, an
 rejects is rejected here.
 
 The state is anything `JSON.stringify` accepts: a string, a number, an object, your own class
-with a `toJSON`.
+with a `toJSON`. It is checked after `toJSON` has run, so what counts is the JSON: a `NaN`, an
+`Infinity` or a bigint that would reach it is a `config` error rather than a silent `null`, and
+so is a cycle. The same object under two fields is not a cycle.
 
 ## Policy
 
@@ -335,10 +338,12 @@ One class, `GuidemeError`, for everything, discriminated by `kind`:
 
 Retries use exponential backoff with jitter, capped at 30 s, and honour an integer
 `retry-after`. What is retried: 429, 529, and a request that never reached a server — a refused
-or reset connection, a TLS handshake failure. Both endpoints, so a throttle on a startup
-`models()` call does not fail the boot. What is not: **a timeout of any phase**, or a body
-failure. `timeout` is one deadline over the whole attempt, so retrying a timeout would multiply
-the wall time that setting promises.
+or reset connection, a TLS handshake failure. A connect timeout raised by the runtime's own
+`fetch` — undici's, about 10 s, in Node — is one of these: it rejects as a `TypeError`, like a
+refused connection, and is retried. Both endpoints, so a throttle on a startup `models()` call
+does not fail the boot. What is not: **this package's own `timeout`**, in any phase, or a body
+failure. `timeout` is one deadline over the whole attempt, so retrying it would multiply the
+wall time that setting promises.
 
 A redirect is **not** followed. The `Authorization` header would travel with it, and whether it
 survives a cross-origin hop is the runtime's rule rather than this package's, so a 3xx surfaces
@@ -453,8 +458,9 @@ the variable it replaces is not read at all.
 The rest of the options: `model`, `policy`, `maxRetries` (default 3), `backoff` (default 500 ms,
 the base of the exponential), `timeout` (default 30 s, per attempt), `recordState`, and `fetch`
 for an injected transport. `maxRetries` must be a non-negative integer, `backoff` a finite
-number of milliseconds of at least 0, and `timeout` a finite number of milliseconds above 0.
-Anything else is a `config` error when the guide is built.
+number of milliseconds of at least 0, and `timeout` above 0 and at most 2 147 483 647 ms
+(2^31 - 1), the longest delay a timer holds; Node would clamp a larger one to 1 ms. Anything
+else is a `config` error when the guide is built.
 
 ## Development
 
